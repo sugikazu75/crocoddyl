@@ -34,11 +34,11 @@ struct ThrusterTpl {
    * @param[in] min_thrust[in]  Minimum thrust (default 0.)
    * @param[in] max_thrust[in]  Maximum thrust (default inf number))
    */
-  ThrusterTpl(const SE3& pose, const Scalar ctorque,
+  ThrusterTpl(const int frame_id, const Scalar ctorque,
               const ThrusterType type = CW,
               const Scalar min_thrust = Scalar(0.),
               const Scalar max_thrust = std::numeric_limits<Scalar>::infinity())
-      : pose(pose),
+      : frame_id(frame_id),
         ctorque(ctorque),
         type(type),
         min_thrust(min_thrust),
@@ -57,13 +57,13 @@ struct ThrusterTpl {
   ThrusterTpl(const Scalar ctorque, const ThrusterType type = CW,
               const Scalar min_thrust = Scalar(0.),
               const Scalar max_thrust = std::numeric_limits<Scalar>::infinity())
-      : pose(SE3::Identity()),
+      : frame_id(0),
         ctorque(ctorque),
         type(type),
         min_thrust(min_thrust),
         max_thrust(max_thrust) {}
   ThrusterTpl(const ThrusterTpl<Scalar>& clone)
-      : pose(clone.pose),
+      : frame_id(clone.frame_id),
         ctorque(clone.ctorque),
         type(clone.type),
         min_thrust(clone.min_thrust),
@@ -72,15 +72,15 @@ struct ThrusterTpl {
   template <typename NewScalar>
   ThrusterTpl<NewScalar> cast() const {
     typedef ThrusterTpl<NewScalar> ReturnType;
-    ReturnType ret(
-        pose.template cast<NewScalar>(), scalar_cast<NewScalar>(ctorque), type,
-        scalar_cast<NewScalar>(min_thrust), scalar_cast<NewScalar>(max_thrust));
+    ReturnType ret(frame_id, scalar_cast<NewScalar>(ctorque), type,
+                   scalar_cast<NewScalar>(min_thrust),
+                   scalar_cast<NewScalar>(max_thrust));
     return ret;
   }
 
   ThrusterTpl& operator=(const ThrusterTpl<Scalar>& other) {
     if (this != &other) {
-      pose = other.pose;
+      frame_id = other.frame_id;
       ctorque = other.ctorque;
       type = other.type;
       min_thrust = other.min_thrust;
@@ -91,22 +91,23 @@ struct ThrusterTpl {
 
   template <typename OtherScalar>
   bool operator==(const ThrusterTpl<OtherScalar>& other) const {
-    return (pose == other.pose && ctorque == other.ctorque &&
+    return (frame_id == other.frame_id && ctorque == other.ctorque &&
             type == other.type && min_thrust == other.min_thrust &&
             max_thrust == other.max_thrust);
   }
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const ThrusterTpl<Scalar>& X) {
-    os << "      pose:" << std::endl
-       << X.pose << "   ctorque: " << X.ctorque << std::endl
+    os << "      frame_id:" << std::endl
+       << X.frame_id << "   ctorque: " << X.ctorque << std::endl
        << "      type: " << X.type << std::endl
        << "min_thrust: " << X.min_thrust << std::endl
        << "max_thrust: " << X.max_thrust << std::endl;
     return os;
   }
 
-  SE3 pose;           //!< Thruster pose
+  SE3 pose;  //!< Thruster pose
+  int frame_id;
   Scalar ctorque;     //!< Coefficient of generated torque per thrust
   ThrusterType type;  //!< Type of thruster (CW and CCW for clockwise and
                       //!< counterclockwise, respectively)
@@ -177,6 +178,10 @@ class ActuationModelFloatingBaseThrustersTpl
           "Invalid argument: "
           << "the first joint has to be a root one (e.g., free-flyer joint)");
     }
+    pinocchio_model_ = state->get_pinocchio();
+    pinocchio_data_ =
+        std::make_shared<pinocchio::DataTpl<Scalar>>(*pinocchio_model_);
+
     // Update the joint actuation part
     W_thrust_.setZero();
     if (nu_ > n_thrusters_) {
@@ -198,13 +203,14 @@ class ActuationModelFloatingBaseThrustersTpl
    * @param[in] u     Joint-torque input \f$\mathbf{u}\in\mathbb{R}^{nu}\f$
    */
   virtual void calc(const std::shared_ptr<Data>& data,
-                    const Eigen::Ref<const VectorXs>&,
+                    const Eigen::Ref<const VectorXs>& x,
                     const Eigen::Ref<const VectorXs>& u) override {
     if (static_cast<std::size_t>(u.size()) != nu_) {
       throw_pretty(
           "Invalid argument: " << "u has wrong dimension (it should be " +
                                       std::to_string(nu_) + ")");
     }
+    updateThrustWrenchUnits(x);
     if (update_data_) {
       updateData(data);
     }
@@ -324,6 +330,35 @@ class ActuationModelFloatingBaseThrustersTpl
     update_data_ = true;
   }
 
+  void updateThrustWrenchUnits(const Eigen::Ref<const VectorXs>& x) {
+    // solve frame FK with state point
+    VectorXs q = x.head(pinocchio_model_->nq);
+    pinocchio::framesForwardKinematics(*pinocchio_model_, *pinocchio_data_, q);
+    for (std::size_t i = 0; i < n_thrusters_; i++) {
+      // assume thrust acting point is same with frame
+      const Thruster& thruster = thrusters_[i];
+      pinocchio::SE3Tpl<Scalar> root_to_frame =
+          pinocchio_data_->oMi[1].inverse() *
+          pinocchio_data_->oMf[thruster.frame_id];
+      const Vector3s p_i = root_to_frame.translation();
+      const Vector3s u_i = root_to_frame.rotation() * Vector3s::UnitZ();
+
+      W_thrust_.template topRows<3>().col(i) = u_i;
+      W_thrust_.template middleRows<3>(3).col(i).noalias() = p_i.cross(u_i);
+      switch (thruster.type) {
+        case CW:
+          W_thrust_.template middleRows<3>(3).col(i) += thruster.ctorque * u_i;
+          break;
+        case CCW:
+          W_thrust_.template middleRows<3>(3).col(i) -= thruster.ctorque * u_i;
+          break;
+      }
+    }
+    Mtau_ = pseudoInverse(W_thrust_);
+    S_.noalias() = W_thrust_ * Mtau_;
+    update_data_ = true;
+  }
+
   const MatrixXs& get_Wthrust() const { return W_thrust_; }
 
   const MatrixXs& get_S() const { return S_; }
@@ -350,6 +385,9 @@ class ActuationModelFloatingBaseThrustersTpl
   using Base::state_;
 
  private:
+  std::shared_ptr<pinocchio::ModelTpl<Scalar>> pinocchio_model_;
+  std::shared_ptr<pinocchio::DataTpl<Scalar>> pinocchio_data_;
+
   void updateData(const std::shared_ptr<Data>& data) {
     data->dtau_du = W_thrust_;
     data->Mtau = Mtau_;
