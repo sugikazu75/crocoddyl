@@ -106,7 +106,7 @@ struct ThrusterTpl {
     return os;
   }
 
-  SE3 pose;  //!< Thruster pose
+  SE3 pose = SE3::Identity();  //!< Thruster pose
   int frame_id;
   Scalar ctorque;     //!< Coefficient of generated torque per thrust
   ThrusterType type;  //!< Type of thruster (CW and CCW for clockwise and
@@ -333,9 +333,11 @@ class ActuationModelFloatingBaseThrustersTpl
   void updateThrustWrenchUnits(const Eigen::Ref<const VectorXs>& x) {
     // solve frame FK with state point
     VectorXs q = x.head(pinocchio_model_->nq);
-    pinocchio::framesForwardKinematics(*pinocchio_model_, *pinocchio_data_, q);
+    pinocchio::forwardKinematics(*pinocchio_model_, *pinocchio_data_, q);
     for (std::size_t i = 0; i < n_thrusters_; i++) {
       // assume thrust acting point is same with frame
+      pinocchio::updateFramePlacement(*pinocchio_model_, *pinocchio_data_,
+                                      thrusters_[i].frame_id);
       const Thruster& thruster = thrusters_[i];
       pinocchio::SE3Tpl<Scalar> root_to_frame =
           pinocchio_data_->oMi[1].inverse() *
@@ -343,7 +345,7 @@ class ActuationModelFloatingBaseThrustersTpl
       const Vector3s p_i = root_to_frame.translation();
       const Vector3s u_i = root_to_frame.rotation() * Vector3s::UnitZ();
 
-      W_thrust_.template topRows<3>().col(i) = u_i;
+      W_thrust_.template topRows<3>().col(i).noalias() = u_i;
       W_thrust_.template middleRows<3>(3).col(i).noalias() = p_i.cross(u_i);
       switch (thruster.type) {
         case CW:
