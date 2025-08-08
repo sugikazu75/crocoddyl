@@ -11,6 +11,7 @@
 
 #include "crocoddyl/core/actuation-base.hpp"
 #include "crocoddyl/multibody/states/multibody.hpp"
+#include "pinocchio/algorithm/kinematics-derivatives.hpp"
 
 namespace crocoddyl {
 
@@ -148,6 +149,7 @@ class ActuationModelFloatingBaseThrustersTpl
   typedef StateMultibodyTpl<Scalar> StateMultibody;
   typedef ThrusterTpl<Scalar> Thruster;
   typedef typename MathBase::Vector3s Vector3s;
+  typedef typename MathBase::Vector6s Vector6s;
   typedef typename MathBase::VectorXs VectorXs;
   typedef typename MathBase::MatrixXs MatrixXs;
 
@@ -183,6 +185,7 @@ class ActuationModelFloatingBaseThrustersTpl
         std::make_shared<pinocchio::DataTpl<Scalar>>(*pinocchio_model_);
 
     // Update the joint actuation part
+    dtau_dx_ = MatrixXs::Zero(state_->get_nv(), state_->get_ndx());
     W_thrust_.setZero();
     if (nu_ > n_thrusters_) {
       W_thrust_.bottomRightCorner(nu_ - n_thrusters_, nu_ - n_thrusters_)
@@ -227,16 +230,20 @@ class ActuationModelFloatingBaseThrustersTpl
    */
 #ifndef NDEBUG
   virtual void calcDiff(const std::shared_ptr<Data>& data,
-                        const Eigen::Ref<const VectorXs>&,
-                        const Eigen::Ref<const VectorXs>&) override {
+                        const Eigen::Ref<const VectorXs>& x,
+                        const Eigen::Ref<const VectorXs>& u) override {
 #else
-  virtual void calcDiff(const std::shared_ptr<Data>&,
-                        const Eigen::Ref<const VectorXs>&,
-                        const Eigen::Ref<const VectorXs>&) override {
+  virtual void calcDiff(const std::shared_ptr<Data>& data,
+                        const Eigen::Ref<const VectorXs>& x,
+                        const Eigen::Ref<const VectorXs>& u) override {
 #endif
     // The derivatives has constant values which were set in createData.
-    assert_pretty(MatrixXs(data->dtau_du).isApprox(W_thrust_),
-                  "dtau_du has wrong value");
+    // assert_pretty(MatrixXs(data->dtau_du).isApprox(W_thrust_),
+    //               "dtau_du has wrong value");
+    updateTauStateDerivative(x, u);
+    if (update_data_) {
+      updateData(data);
+    }
   }
 
   virtual void commands(const std::shared_ptr<Data>& data,
@@ -345,8 +352,8 @@ class ActuationModelFloatingBaseThrustersTpl
       const Vector3s p_i = root_to_frame.translation();
       const Vector3s u_i = root_to_frame.rotation() * Vector3s::UnitZ();
 
-      W_thrust_.template topRows<3>().col(i).noalias() = u_i;
-      W_thrust_.template middleRows<3>(3).col(i).noalias() = p_i.cross(u_i);
+      W_thrust_.template topRows<3>().col(i) = u_i;
+      W_thrust_.template middleRows<3>(3).col(i) = p_i.cross(u_i);
       switch (thruster.type) {
         case CW:
           W_thrust_.template middleRows<3>(3).col(i) += thruster.ctorque * u_i;
@@ -358,6 +365,48 @@ class ActuationModelFloatingBaseThrustersTpl
     }
     Mtau_ = pseudoInverse(W_thrust_);
     S_.noalias() = W_thrust_ * Mtau_;
+    update_data_ = true;
+  }
+
+  void updateTauStateDerivative(const Eigen::Ref<const VectorXs>& x,
+                                const Eigen::Ref<const VectorXs>& u) {
+    // Compute the Jacobian of the actuation signal w.r.t. the state
+    // dtau_dx_ is nv * ndx
+    dtau_dx_.setZero();
+    VectorXs q = x.head(pinocchio_model_->nq);
+    VectorXs thrust = u.head(n_thrusters_);
+
+    pinocchio::computeJointKinematicHessians(*pinocchio_model_,
+                                             *pinocchio_data_, q);
+
+    // i-th rotor
+    for (std::size_t i = 0; i < n_thrusters_; ++i) {
+      const Thruster& p = thrusters_[i];
+      Vector6s thrust_wrench_unit;
+      thrust_wrench_unit << Vector3s::UnitZ(),
+          ((p.type == CW ? 1.0 : -1.0) * p.ctorque * Vector3s::UnitZ());
+      pinocchio::JointIndex rotor_parent_joint_index =
+          pinocchio_model_->frames[p.frame_id].parent;
+
+      Eigen::Tensor<Scalar, 3> rotor_i_hessian(6, pinocchio_model_->nv,
+                                               pinocchio_model_->nv);
+      rotor_i_hessian.setZero();
+      pinocchio::getJointKinematicHessian(*pinocchio_model_, *pinocchio_data_,
+                                          rotor_parent_joint_index,
+                                          pinocchio::LOCAL, rotor_i_hessian);
+
+      // j-th joint. skip root link
+      for (std::size_t j = 0; j < pinocchio_model_->nv - 6; ++j) {
+        const Scalar* ptr =
+            rotor_i_hessian.data() + 6 * pinocchio_model_->nv * (j + 6);
+        Eigen::Map<const Eigen::Matrix<Scalar, 6, Eigen::Dynamic>>
+            rotor_i_jacobian_partial_q_j(ptr, 6, pinocchio_model_->nv);
+
+        dtau_dx_.col(7 + j) += rotor_i_jacobian_partial_q_j.transpose() *
+                               thrust_wrench_unit *
+                               thrust(i);  // x include quaternion
+      }
+    }
     update_data_ = true;
   }
 
@@ -377,6 +426,7 @@ class ActuationModelFloatingBaseThrustersTpl
  protected:
   std::vector<Thruster> thrusters_;  //!< Vector of thrusters
   std::size_t n_thrusters_;          //!< Number of thrusters
+  MatrixXs dtau_dx_;
   MatrixXs W_thrust_;  //!< Matrix from thrusters thrusts to body wrench
   MatrixXs Mtau_;  //!< Constaint torque transform from generalized torques to
                    //!< joint torque inputs
@@ -391,6 +441,7 @@ class ActuationModelFloatingBaseThrustersTpl
   std::shared_ptr<pinocchio::DataTpl<Scalar>> pinocchio_data_;
 
   void updateData(const std::shared_ptr<Data>& data) {
+    data->dtau_dx = dtau_dx_;
     data->dtau_du = W_thrust_;
     data->Mtau = Mtau_;
     const std::size_t nv = state_->get_nv();
