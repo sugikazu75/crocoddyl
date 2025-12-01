@@ -230,11 +230,13 @@ void DifferentialActionModelFreeThrustFwdDynamicsTpl<Scalar>::quasiStatic(
   for (int i = 0; i < n_thrusts_; i++) {
     // thrust wrench units
     Force thrust_wrench_unit;
-    thrust_wrench_unit.linear() = Vector3s(0, 0, 1);
+    thrust_wrench_unit.linear() = Vector3s(Scalar(0.), Scalar(0.), Scalar(1.));
     if (rotors_[i].direction_ == CLOCKWISE)
-      thrust_wrench_unit.angular() = Vector3s(0, 0, rotors_[i].ctorque_);
+      thrust_wrench_unit.angular() =
+          Vector3s(Scalar(0.), Scalar(0.), rotors_[i].ctorque_);
     else
-      thrust_wrench_unit.angular() = Vector3s(0, 0, -rotors_[i].ctorque_);
+      thrust_wrench_unit.angular() =
+          Vector3s(Scalar(0.), Scalar(0.), -rotors_[i].ctorque_);
 
     // rotor frame Jacobian
     MatrixXs rotor_i_jacobian = MatrixXs::Zero(6, nv);

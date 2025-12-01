@@ -31,11 +31,13 @@ struct RotorTpl {
         direction_(direction),
         min_thrust_(min_thrust),
         max_thrust_(max_thrust) {
-    thrust_wrench_unit_.linear() = Vector3s(0, 0, 1);
+    thrust_wrench_unit_.linear() = Vector3s(Scalar(0.), Scalar(0.), Scalar(1.));
     if (direction_ == CLOCKWISE)
-      thrust_wrench_unit_.angular() = Vector3s(0, 0, ctorque_);
+      thrust_wrench_unit_.angular() =
+          Vector3s(Scalar(0.), Scalar(0.), ctorque_);
     else
-      thrust_wrench_unit_.angular() = Vector3s(0, 0, -ctorque_);
+      thrust_wrench_unit_.angular() =
+          Vector3s(Scalar(0.), Scalar(0.), -ctorque_);
 
     thrust_wrench_unit_parent_joint_ = joint_M_rotor_.act(thrust_wrench_unit_);
   }
