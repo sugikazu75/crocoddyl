@@ -104,49 +104,27 @@ void DifferentialActionModelFreeThrustFwdDynamicsTpl<Scalar>::calcDiff(
 
   Data* d = static_cast<Data*>(data.get());
 
-  pinocchio::computeJointKinematicHessians(*pinocchio_, d->pinocchio, q);
-
   // Computing the dynamics derivatives
   VectorXs tau = VectorXs::Zero(state_->get_nv());
   tau.tail(nu_ - n_thrusts_) = u.tail(nu_ - n_thrusts_);
   pinocchio::computeABADerivatives(*pinocchio_, d->pinocchio, q, v, tau,
-                                   d->Fx.leftCols(nv), d->Fx.rightCols(nv),
-                                   d->pinocchio.Minv);
+                                   d->fext, d->Fx.leftCols(nv),
+                                   d->Fx.rightCols(nv), d->pinocchio.Minv);
 
   // derivatives w.r.t joint torques
   d->Fu.rightCols(nu_ - n_thrusts_).noalias() = d->pinocchio.Minv.rightCols(
       nu_ -
       n_thrusts_);  // TODO: We now assume dtau_du is identity for joint part
 
-  // i-th rotor
+  // derivative w.r.t. thrusts
   for (int i = 0; i < n_thrusts_; i++) {
-    pinocchio::JointIndex rotor_parent_joint_index =
-        pinocchio_->frames[rotors_[i].frame_id_].parent;
-
-    // rotor frame Jacobian
     MatrixXs rotor_i_jacobian = MatrixXs::Zero(6, nv);
     pinocchio::computeFrameJacobian(*pinocchio_, d->pinocchio, q,
                                     rotors_[i].frame_id_, pinocchio::LOCAL,
                                     rotor_i_jacobian);
 
-    // derivative w.r.t. thrusts
     d->Fu.col(i).noalias() = d->pinocchio.Minv * rotor_i_jacobian.transpose() *
                              rotors_[i].thrust_wrench_unit_.toVector();
-
-    d->joint_hessian_tmp.setZero();
-    pinocchio::getJointKinematicHessian(*pinocchio_, d->pinocchio,
-                                        rotor_parent_joint_index,
-                                        pinocchio::LOCAL, d->joint_hessian_tmp);
-
-    // j-th joint
-    for (int j = 0; j < nv; j++) {
-      const Scalar* ptr = d->joint_hessian_tmp.data() + j * 6 * nv;
-      Eigen::Map<const Eigen::Matrix<Scalar, 6, Eigen::Dynamic> >
-          rotor_i_parent_joint_hessian_j(ptr, 6, nv);
-      d->Fx.col(j).noalias() +=
-          d->pinocchio.Minv * rotor_i_parent_joint_hessian_j.transpose() *
-          rotors_[i].thrust_wrench_unit_parent_joint_.toVector() * u(i);
-    }
   }
 
   d->multibody.joint->da_dx = d->Fx;
