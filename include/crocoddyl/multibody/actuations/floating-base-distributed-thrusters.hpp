@@ -79,6 +79,7 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
   typedef ActuationDataFloatingBaseDistributedThrustersTpl<Scalar> Data;
   typedef ActuationDataAbstractTpl<Scalar> ActuationDataAbstract;
   typedef StateMultibodyTpl<Scalar> StateMultibody;
+  typedef pinocchio::ModelTpl<Scalar> PinocchioModel;
   typedef DistributedThrusterTpl<Scalar> DistributedThruster;
   typedef typename MathBase::MatrixXs MatrixXs;
   typedef typename MathBase::VectorXs VectorXs;
@@ -115,6 +116,10 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
           state_->get_pinocchio()->effortLimit.segment(nv_f,
                                                        nu_ - n_thrusters_);
     }
+
+    zero_gravity_model_ =
+        std::make_shared<PinocchioModel>(*(state_->get_pinocchio()));
+    zero_gravity_model_->gravity.setZero();
 
     for (size_t i = 0; i < n_thrusters_; ++i) {
       Base::u_lb_(i) = thrusters_.at(i).min_thrust_;
@@ -159,23 +164,17 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
 
     Data* d = static_cast<Data*>(data.get());
 
-    MatrixXs gravity_partial_dq =
-        MatrixXs::Zero(state_->get_nv(), state_->get_nv());
-    pinocchio::computeGeneralizedGravityDerivatives(
-        *(state_->get_pinocchio()), d->pinocchio, q, gravity_partial_dq);
-
     computeFExtByThrusts(u, d->fext);
 
     pinocchio::computeRNEADerivatives(
-        *(state_->get_pinocchio()), d->pinocchio, q,
+        *(zero_gravity_model_), d->pinocchio, q,
         Eigen::VectorBlock<const Eigen::Ref<const VectorXs>,
                            Eigen::Dynamic>::Zero(state_->get_nv()),
         Eigen::VectorBlock<const Eigen::Ref<const VectorXs>,
                            Eigen::Dynamic>::Zero(state_->get_nv()),
         d->fext);
 
-    data->dtau_dx.leftCols(state_->get_nv()).noalias() =
-        gravity_partial_dq - d->pinocchio.dtau_dq;
+    data->dtau_dx.leftCols(state_->get_nv()).noalias() = -d->pinocchio.dtau_dq;
     data->dtau_dx.rightCols(state_->get_nv()).setZero();
   }
 
@@ -217,6 +216,7 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
   }
 
  protected:
+  std::shared_ptr<PinocchioModel> zero_gravity_model_;
   std::shared_ptr<StateMultibody> state_;
   std::vector<DistributedThruster> thrusters_;  //!< List of thrusters
   std::size_t n_thrusters_;                     //!< Number of thrusters
