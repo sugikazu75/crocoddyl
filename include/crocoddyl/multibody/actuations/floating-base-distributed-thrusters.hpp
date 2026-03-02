@@ -185,6 +185,10 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
 
     d->Mtau = pseudoInverse(d->W_thrust);
     data->u.noalias() = d->Mtau * tau;
+    d->S.noalias() = d->W_thrust * d->Mtau;
+    for (std::size_t k = 0; k < state_->get_nv(); ++k) {
+      data->tau_set[k] = if_static(d->S(k, k));
+    }
   }
 
   virtual void torqueTransform(
@@ -242,7 +246,30 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
     data->W_thrust.bottomRightCorner(nu_ - n_thrusters_, nu_ - n_thrusters_)
         .diagonal()
         .setOnes();
+    data->Mtau = pseudoInverse(data->W_thrust);
+    data->S.noalias() = data->W_thrust * data->Mtau;
+    for (std::size_t k = 0; k < state_->get_nv(); ++k) {
+      data->tau_set[k] = if_static(data->S(k, k));
+    }
   }
+
+  // Use for floating-point types
+  template <typename Scalar>
+  typename std::enable_if<std::is_floating_point<Scalar>::value, bool>::type
+  if_static(const Scalar& condition) {
+    return (fabs(condition) < std::numeric_limits<Scalar>::epsilon()) ? false
+                                                                      : true;
+  }
+
+#ifdef CROCODDYL_WITH_CODEGEN
+  // Use for CppAD types
+  template <typename Scalar>
+  typename std::enable_if<!std::is_floating_point<Scalar>::value, bool>::type
+  if_static(const Scalar& condition) {
+    return CppAD::Value(CppAD::fabs(condition)) >=
+           CppAD::numeric_limits<Scalar>::epsilon();
+  }
+#endif
 };
 
 template <typename _Scalar>
@@ -265,11 +292,14 @@ struct ActuationDataFloatingBaseDistributedThrustersTpl
     pinocchio = pinocchio::DataTpl<Scalar>(*(state->get_pinocchio()));
     fext.resize(state->get_pinocchio()->njoints, Force::Zero());
     W_thrust = MatrixXs::Zero(model->get_state()->get_nv(), model->get_nu());
+    S = MatrixXs::Zero(model->get_state()->get_nv(),
+                       model->get_state()->get_nv());
   }
 
   pinocchio::DataTpl<Scalar> pinocchio;  //!< Pinocchio data
   pinocchio::container::aligned_vector<Force> fext;
   MatrixXs W_thrust;
+  MatrixXs S;
 
   using Base::dtau_du;
   using Base::dtau_dx;
