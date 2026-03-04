@@ -181,10 +181,27 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
   virtual void commands(const std::shared_ptr<ActuationDataAbstract>& data,
                         const Eigen::Ref<const VectorXs>& x,
                         const Eigen::Ref<const VectorXs>& tau) {
+    const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic>
+        q = x.head(state_->get_nq());
+
     Data* d = static_cast<Data*>(data.get());
 
+    pinocchio::framesForwardKinematics(*(state_->get_pinocchio()), d->pinocchio,
+                                       q);
+
+    for (size_t i = 0; i < n_thrusters_; ++i) {
+      // Compute the thruster Jacobian
+      MatrixXs thrust_jacobian = MatrixXs::Zero(6, state_->get_nv());
+      pinocchio::computeFrameJacobian(*(state_->get_pinocchio()), d->pinocchio,
+                                      q, thrusters_.at(i).frame_id_,
+                                      pinocchio::LOCAL, thrust_jacobian);
+
+      d->W_thrust.col(i) = thrust_jacobian.transpose() *
+                           thrusters_.at(i).thrust_wrench_unit_.toVector();
+    }
     d->Mtau = pseudoInverse(d->W_thrust);
     data->u.noalias() = d->Mtau * tau;
+
     d->S.noalias() = d->W_thrust * d->Mtau;
     for (std::size_t k = 0; k < state_->get_nv(); ++k) {
       data->tau_set[k] = if_static(d->S(k, k));
