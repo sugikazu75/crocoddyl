@@ -141,16 +141,8 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
     pinocchio::framesForwardKinematics(*(state_->get_pinocchio()), d->pinocchio,
                                        q);
 
-    for (size_t i = 0; i < n_thrusters_; ++i) {
-      // Compute the thruster Jacobian
-      MatrixXs thrust_jacobian = MatrixXs::Zero(6, state_->get_nv());
-      pinocchio::computeFrameJacobian(*(state_->get_pinocchio()), d->pinocchio,
-                                      q, thrusters_.at(i).frame_id_,
-                                      pinocchio::LOCAL, thrust_jacobian);
+    updateWThrust(d, q);
 
-      d->W_thrust.col(i) = thrust_jacobian.transpose() *
-                           thrusters_.at(i).thrust_wrench_unit_.toVector();
-    }
     data->dtau_du = d->W_thrust;
     data->tau = data->dtau_du * u;
   }
@@ -186,19 +178,8 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
 
     Data* d = static_cast<Data*>(data.get());
 
-    pinocchio::framesForwardKinematics(*(state_->get_pinocchio()), d->pinocchio,
-                                       q);
+    updateWThrust(d, q);
 
-    for (size_t i = 0; i < n_thrusters_; ++i) {
-      // Compute the thruster Jacobian
-      MatrixXs thrust_jacobian = MatrixXs::Zero(6, state_->get_nv());
-      pinocchio::computeFrameJacobian(*(state_->get_pinocchio()), d->pinocchio,
-                                      q, thrusters_.at(i).frame_id_,
-                                      pinocchio::LOCAL, thrust_jacobian);
-
-      d->W_thrust.col(i) = thrust_jacobian.transpose() *
-                           thrusters_.at(i).thrust_wrench_unit_.toVector();
-    }
     d->Mtau = pseudoInverse(d->W_thrust);
     data->u.noalias() = d->Mtau * tau;
 
@@ -245,6 +226,22 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
   using Base::nu_;
 
  private:
+  void updateWThrust(Data* d, const Eigen::Ref<const VectorXs>& q) {
+    pinocchio::framesForwardKinematics(*(state_->get_pinocchio()), d->pinocchio,
+                                       q);
+
+    for (size_t i = 0; i < n_thrusters_; ++i) {
+      // Compute the thruster Jacobian
+      MatrixXs thrust_jacobian = MatrixXs::Zero(6, state_->get_nv());
+      pinocchio::computeFrameJacobian(*(state_->get_pinocchio()), d->pinocchio,
+                                      q, thrusters_.at(i).frame_id_,
+                                      pinocchio::LOCAL, thrust_jacobian);
+
+      d->W_thrust.col(i) = thrust_jacobian.transpose() *
+                           thrusters_.at(i).thrust_wrench_unit_.toVector();
+    }
+  }
+
   void computeFExtByThrusts(const Eigen::Ref<const VectorXs>& u,
                             pinocchio::container::aligned_vector<Force>& fext) {
     // calculate the effect of thrusters on the system
