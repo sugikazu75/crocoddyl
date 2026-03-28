@@ -68,7 +68,7 @@ crocoddyl::SimpleBipedGaitProblem::createWalkingProblem(
 
   // walking steps
   for (int i = 1; i <= num_steps_; i++) {
-    if (i % 4 == 1)  // right step
+    if (i % 2 == 1)  // right step
     {
       std::vector<std::shared_ptr<crocoddyl::ActionModelAbstract>>
           rightStepModels;
@@ -84,7 +84,7 @@ crocoddyl::SimpleBipedGaitProblem::createWalkingProblem(
       }
       loco3dModel.insert(loco3dModel.end(), rightStepModels.begin(),
                          rightStepModels.end());
-    } else if (i % 4 == 3)  // left step
+    } else  // left step
     {
       std::vector<std::shared_ptr<crocoddyl::ActionModelAbstract>>
           leftStepModels =
@@ -92,21 +92,37 @@ crocoddyl::SimpleBipedGaitProblem::createWalkingProblem(
                                    stepHeight, stepKnots, rf_ids, lf_ids);
       loco3dModel.insert(loco3dModel.end(), leftStepModels.begin(),
                          leftStepModels.end());
-    } else if (i % 2 == 0)  // double support
+    }
+    // double support
+    loco3dModel.push_back(
+        createSwingFootModel(timeStep, rf_lf_ids, comRef, feetPos0));
+  }
+
+  // final half step
+  if (num_steps_ > 0) {
+    if (num_steps_ % 2 == 0)  // ended with left step. add half right step
     {
-      for (size_t j = 0; j < supportKnots; j++) {
-        loco3dModel.push_back(
-            createSwingFootModel(timeStep, rf_lf_ids, comRef, feetPos0));
-      }
+      std::vector<std::shared_ptr<crocoddyl::ActionModelAbstract>>
+          rightStepModels =
+              createFootStepModels(timeStep, comRef, feetPos0, 0.5 * stepLength,
+                                   stepHeight, stepKnots, lf_ids, rf_ids);
+      loco3dModel.insert(loco3dModel.end(), rightStepModels.begin(),
+                         rightStepModels.end());
+    } else  // ended with right step -> move left half-step
+    {
+      std::vector<std::shared_ptr<crocoddyl::ActionModelAbstract>>
+          leftStepModels =
+              createFootStepModels(timeStep, comRef, feetPos0, 0.5 * stepLength,
+                                   stepHeight, stepKnots, rf_ids, lf_ids);
+      loco3dModel.insert(loco3dModel.end(), leftStepModels.begin(),
+                         leftStepModels.end());
     }
   }
 
   // final double support phase
-  if (num_steps_ % 2 == 1) {
-    for (size_t i = 0; i < supportKnots; i++)
-      loco3dModel.push_back(
-          createSwingFootModel(timeStep, rf_lf_ids, comRef, feetPos0));
-  }
+  for (size_t i = 0; i < supportKnots; i++)
+    loco3dModel.push_back(
+        createSwingFootModel(timeStep, rf_lf_ids, comRef, feetPos0));
 
   // terminal state
   std::shared_ptr<crocoddyl::ActionModelAbstract> terminalModel =
