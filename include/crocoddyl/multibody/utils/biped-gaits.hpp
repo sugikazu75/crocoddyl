@@ -82,6 +82,7 @@ class SimpleBipedGaitProblem {
   void setInitialConfiguration(const Eigen::VectorXd& q0) { q0_ = q0; }
   Eigen::VectorXd getInitialConfiguration() const { return q0_; }
   pinocchio::Model& getRModel() { return rmodel_; }
+  void setFwddyn(bool fwddyn) { fwddyn_ = fwddyn; }
   bool isFwdDyn() const { return fwddyn_; }
   pinocchio::FrameIndex getLeftFootId() const { return left_foot_id_; }
   pinocchio::FrameIndex getRightFootId() const { return right_foot_id_; }
