@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // BSD 3-Clause License
 //
-// Copyright (C) 2025-2025, Heriot-Watt University
+// Copyright (C) 2025-2026, Heriot-Watt University
 // Copyright note valid unless otherwise stated in individual files.
 // All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
@@ -46,8 +46,8 @@ struct ActionModelCodeGenVisitor
             ":param updateParams: function used to update the calc and "
             "calcDiff's parameters (default empty function)\n"
             ":param compiler: type of compiler GCC or CLANG (default: CLANG)\n"
-            ":param compile_options: Compilation flags (default: '-Ofast "
-            "-march=native')"))
+            ":param compile_options: Compilation flags (default: '-O3 "
+            "-ffast-math -march=native')"))
         .def(bp::init<std::string, std::shared_ptr<Model>>(
             bp::args("self", "lib_fname", "model"),
             "Initialize the code generated action model from an pre-compiled "
@@ -211,9 +211,10 @@ struct ActionDataCodeGeneVisitor
           ":param updateParams: function used to update the calc and "         \
           "calcDiff's parameters (default empty function)\n"                   \
           ":param compiler: type of compiler GCC or CLANG (default: CLANG)\n"  \
-          ":param compile_options: Compilation flags (default: '-Ofast "       \
-          "-march=native')"))                                                  \
+          ":param compile_options: Compilation flags (default: '-O3 "          \
+          "-ffast-math -march=native')"))                                      \
       .def(ActionModelCodeGenVisitor<Model>())                                 \
+      .def(CastVisitor<Model, true>())                                         \
       .def(PrintableVisitor<Model>())                                          \
       .def(CopyableVisitor<Model>());
 

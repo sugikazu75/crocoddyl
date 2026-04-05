@@ -2,7 +2,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // BSD 3-Clause License
 //
-// Copyright (C) 2019-2025, LAAS-CNRS, INRIA, University of Edinburgh,
+// Copyright (C) 2019-2026, LAAS-CNRS, INRIA, University of Edinburgh,
 //                          Heriot-Watt University
 // Copyright note valid unless otherwise stated in individual files.
 // All rights reserved.
@@ -365,19 +365,34 @@ void ActionModelCodeGenTpl<Scalar>::compileLib() {
                  << lib_fname_ + SystemInfo::DYNAMIC_LIB_EXTENSION
                  << " should not be compiled again");
   }
+  auto splitFlags = [](const std::string& flags) {
+    std::istringstream iss(flags);
+    std::vector<std::string> out;
+    std::string flag;
+    while (iss >> flag) {
+      out.push_back(flag);
+    }
+    return out;
+  };
   switch (compiler_type_) {
     case GCC: {
-      CppAD::cg::GccCompiler<Scalar> compiler("/usr/bin/gcc");
+      CppAD::cg::GccCompiler<Scalar> compiler(compilerExecutable(GCC));
       std::vector<std::string> compile_flags = compiler.getCompileFlags();
-      compile_flags[0] = compile_options_;
+      compile_flags.clear();
+      auto extra_flags = splitFlags(compile_options_);
+      compile_flags.insert(compile_flags.end(), extra_flags.begin(),
+                           extra_flags.end());
       compiler.setCompileFlags(compile_flags);
       dynLibManager_->createDynamicLibrary(compiler, false);
       break;
     }
     case CLANG: {
-      CppAD::cg::ClangCompiler<Scalar> compiler("/usr/bin/clang");
+      CppAD::cg::ClangCompiler<Scalar> compiler(compilerExecutable(CLANG));
       std::vector<std::string> compile_flags = compiler.getCompileFlags();
-      compile_flags[0] = compile_options_;
+      compile_flags.clear();
+      auto extra_flags = splitFlags(compile_options_);
+      compile_flags.insert(compile_flags.end(), extra_flags.begin(),
+                           extra_flags.end());
       compiler.setCompileFlags(compile_flags);
       dynLibManager_->createDynamicLibrary(compiler, false);
       break;
@@ -650,8 +665,8 @@ ActionModelCodeGenTpl<Scalar>::ActionModelCodeGenTpl()
     : model_(nullptr),
       np_(0),
       lib_fname_(""),
-      compiler_type_(CLANG),
-      compile_options_("-Ofast -march=native"),
+      compiler_type_(defaultCompilerType()),
+      compile_options_("-O -ffast-math -march=native"),
       updateParams_(EmptyParamsEnv) {
   // Add initialization logic if necessary
 }
