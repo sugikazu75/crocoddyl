@@ -26,7 +26,16 @@ template <typename Scalar>
 struct ThrusterTpl;
 
 template <typename Scalar>
+struct DistributedThrusterTpl;
+
+template <typename Scalar>
 class ActuationModelFloatingBaseThrustersTpl;
+
+template <typename Scalar>
+class ActuationModelFloatingBaseDistributedThrustersTpl;
+
+template <typename Scalar>
+struct ActuationDataFloatingBaseDistributedThrustersTpl;
 
 // force
 template <typename Scala>
@@ -253,8 +262,13 @@ struct ImpulseDataMultipleTpl;
 typedef ActuationModelFloatingBaseTpl<double> ActuationModelFloatingBase;
 typedef ActuationModelFullTpl<double> ActuationModelFull;
 typedef ThrusterTpl<double> Thruster;
+typedef DistributedThrusterTpl<double> DistributedThruster;
 typedef ActuationModelFloatingBaseThrustersTpl<double>
     ActuationModelFloatingBaseThrusters;
+typedef ActuationModelFloatingBaseDistributedThrustersTpl<double>
+    ActuationModelFloatingBaseDistributedThrusters;
+typedef ActuationDataFloatingBaseDistributedThrustersTpl<double>
+    ActuationDataFloatingBaseDistributedThrusters;
 
 typedef ForceDataAbstractTpl<double> ForceDataAbstract;
 
