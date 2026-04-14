@@ -37,6 +37,12 @@ class ActuationModelFloatingBaseDistributedThrustersTpl;
 template <typename Scalar>
 struct ActuationDataFloatingBaseDistributedThrustersTpl;
 
+template <typename Scalar>
+class ActuationModelFloatingBaseThrusterRatesTpl;
+
+template <typename Scalar>
+struct ActuationDataFloatingBaseThrusterRatesTpl;
+
 // force
 template <typename Scala>
 struct ForceDataAbstractTpl;
@@ -272,6 +278,10 @@ typedef ActuationModelFloatingBaseDistributedThrustersTpl<double>
     ActuationModelFloatingBaseDistributedThrusters;
 typedef ActuationDataFloatingBaseDistributedThrustersTpl<double>
     ActuationDataFloatingBaseDistributedThrusters;
+typedef ActuationModelFloatingBaseThrusterRatesTpl<double>
+    ActuationModelFloatingBaseThrusterRates;
+typedef ActuationDataFloatingBaseThrusterRatesTpl<double>
+    ActuationDataFloatingBaseThrusterRates;
 
 typedef ForceDataAbstractTpl<double> ForceDataAbstract;
 
