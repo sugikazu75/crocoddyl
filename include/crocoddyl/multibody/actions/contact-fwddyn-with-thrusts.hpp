@@ -138,6 +138,10 @@ class DifferentialActionModelContactFwdDynamicsWithThrustsTpl
   virtual const VectorXs& get_g_lb() const override;
   virtual const VectorXs& get_g_ub() const override;
 
+  VectorXs computeEquilibriumThrust(
+      const std::shared_ptr<DifferentialActionDataAbstract>& data,
+      const Eigen::Ref<const VectorXs>& q);
+
   const std::shared_ptr<ActuationModelAbstract>& get_actuation() const;
   const std::shared_ptr<ContactModelMultiple>& get_contacts() const;
   const std::shared_ptr<CostModelSum>& get_costs() const;

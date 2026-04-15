@@ -548,6 +548,56 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
 }
 
 template <typename Scalar>
+typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
+    computeEquilibriumThrust(
+        const std::shared_ptr<DifferentialActionDataAbstract>& data,
+        const Eigen::Ref<const VectorXs>& q) {
+  Data* d = static_cast<Data*>(data.get());
+  const std::size_t nq = state_->get_nq();
+  const std::size_t nv = state_->get_nv();
+  const std::size_t nc = contacts_->get_nc();
+  const std::size_t n_joints = nu_ - nf_;
+
+  // Build zero-thrust static state: [q, 0, 0]
+  d->tmp_xstatic.head(nq) = q;
+  d->tmp_xstatic.segment(nq, nv).setZero();
+  d->tmp_xstatic.tail(nf_).setZero();
+  VectorXs u_zero = VectorXs::Zero(nu_);
+
+  // RNEA with v=0, a=0 → d->pinocchio.tau = g (gravity)
+  pinocchio::computeAllTerms(*pinocchio_, d->pinocchio, q,
+                             d->tmp_xstatic.segment(nq, nv));
+  pinocchio::computeJointJacobians(*pinocchio_, d->pinocchio, q);
+  pinocchio::rnea(*pinocchio_, d->pinocchio, q, d->tmp_xstatic.segment(nq, nv),
+                  d->tmp_xstatic.segment(nq, nv));
+  const VectorXs g_tau = d->pinocchio.tau;
+
+  // Actuation derivatives: dtau_dx.rightCols(nf) = W_f(q),
+  //                        dtau_du.rightCols(n_joints) = S
+  actuation_->calc(d->multibody.actuation, d->tmp_xstatic, u_zero);
+  actuation_->calcDiff(d->multibody.actuation, d->tmp_xstatic, u_zero);
+
+  // Contact Jacobians at current q
+  contacts_->calc(d->multibody.contacts, d->tmp_xstatic.head(nq + nv));
+
+  // Build [W_f | S | Jc^T]  (nv × (nf + n_joints + nc))
+  d->tmp_Jstatic.conservativeResize(nv, nu_ + nc);
+  d->tmp_Jstatic.leftCols(nf_) =
+      d->multibody.actuation->dtau_dx.rightCols(nf_);  // W_f(q)
+  d->tmp_Jstatic.middleCols(nf_, n_joints) =
+      d->multibody.actuation->dtau_du.rightCols(n_joints);  // S
+  d->tmp_Jstatic.rightCols(nc) =
+      d->multibody.contacts->Jc.topRows(nc).transpose();  // Jc^T
+
+  // Minimum-norm solution: [f; tau_joints; lambda] = pinv * g
+  VectorXs sol = pseudoInverse(d->tmp_Jstatic) * g_tau;
+  d->pinocchio.tau.setZero();
+  return sol.head(nf_);
+}
+
+template <typename Scalar>
 const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
     Scalar>::VectorXs&
 DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
