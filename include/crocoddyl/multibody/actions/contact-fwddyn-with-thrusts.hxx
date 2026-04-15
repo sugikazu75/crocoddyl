@@ -85,6 +85,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::init() {
   Base::u_lb_ = actuation_->get_u_lb();
   Base::u_ub_ = actuation_->get_u_ub();
   robot_only_costs_ = (costs_->get_state()->get_ndx() != state_->get_ndx());
+  thrust_reg_weight_ = VectorXs::Zero(nf_);
 }
 
 template <typename Scalar>
@@ -145,6 +146,10 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
   // When costs use underlying StateMultibody, pass robot-only state slice
   costs_->calc(d->costs, robot_only_costs_ ? x.head(nq + nv) : x, u);
   d->cost = d->costs->cost;
+  // Thrust regularization: 0.5 * sum_i(w_i * f_i^2)  (f = x.tail(nf_))
+  if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+    d->cost += Scalar(0.5) * thrust_reg_weight_.dot(x.tail(nf_).cwiseAbs2());
+  }
   if (constraints_ != nullptr) {
     d->constraints->resize(this, d);
     constraints_->calc(d->constraints, x, u);
@@ -173,6 +178,9 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
   pinocchio::computeCentroidalMomentum(*pinocchio_, d->pinocchio);
   costs_->calc(d->costs, robot_only_costs_ ? x.head(nq + nv) : x);
   d->cost = d->costs->cost;
+  if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+    d->cost += Scalar(0.5) * thrust_reg_weight_.dot(x.tail(nf_).cwiseAbs2());
+  }
   if (constraints_ != nullptr) {
     d->constraints->resize(this, d, false);
     constraints_->calc(d->constraints, x);
@@ -272,8 +280,22 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
     d->Lxu.topRows(robot_ndx) = d->costs->Lxu;
     d->Lxu.bottomRows(nf_).setZero();
     d->Luu = d->costs->Luu;
+    // Thrust regularization gradient: dL/df_i = w_i*f_i, d^2L/df_i^2 = w_i
+    if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          thrust_reg_weight_.array() * x.tail(nf_).array();
+      d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
+          thrust_reg_weight_.array();
+    }
   } else {
     costs_->calcDiff(d->costs, x, u);
+    // Thrust regularization gradient (non-robot-only path)
+    if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          thrust_reg_weight_.array() * x.tail(nf_).array();
+      d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
+          thrust_reg_weight_.array();
+    }
   }
   if (constraints_ != nullptr) {
     constraints_->calcDiff(d->constraints, x, u);
@@ -300,8 +322,20 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
     d->Lxx.topLeftCorner(robot_ndx, robot_ndx) = d->costs->Lxx;
     d->Lxx.topRightCorner(robot_ndx, nf_).setZero();
     d->Lxx.bottomRows(nf_).setZero();
+    if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          thrust_reg_weight_.array() * x.tail(nf_).array();
+      d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
+          thrust_reg_weight_.array();
+    }
   } else {
     costs_->calcDiff(d->costs, x);
+    if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          thrust_reg_weight_.array() * x.tail(nf_).array();
+      d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
+          thrust_reg_weight_.array();
+    }
   }
   if (constraints_ != nullptr) {
     constraints_->calcDiff(d->constraints, x);
@@ -507,6 +541,28 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
         "Invalid argument: " << "The damping factor has to be positive");
   }
   JMinvJt_damping_ = damping;
+}
+
+template <typename Scalar>
+const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_thrust_reg_weight() const {
+  return thrust_reg_weight_;
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::set_thrust_reg_weight(const VectorXs& weight) {
+  if (static_cast<std::size_t>(weight.size()) != nf_) {
+    throw_pretty("Invalid argument: " << "thrust_reg_weight must have size nf="
+                                      << nf_);
+  }
+  if ((weight.array() < Scalar(0.)).any()) {
+    throw_pretty("Invalid argument: "
+                 << "thrust_reg_weight elements must be non-negative");
+  }
+  thrust_reg_weight_ = weight;
 }
 
 template <typename Scalar>

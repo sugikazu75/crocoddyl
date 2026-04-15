@@ -145,8 +145,10 @@ class DifferentialActionModelContactFwdDynamicsWithThrustsTpl
   pinocchio::ModelTpl<Scalar>& get_pinocchio() const;
   const VectorXs& get_armature() const;
   const Scalar get_damping_factor() const;
+  const VectorXs& get_thrust_reg_weight() const;
   void set_armature(const VectorXs& armature);
   void set_damping_factor(const Scalar damping);
+  void set_thrust_reg_weight(const VectorXs& weight);
 
   template <typename NewScalar>
   DifferentialActionModelContactFwdDynamicsWithThrustsTpl<NewScalar> cast()
@@ -171,9 +173,10 @@ class DifferentialActionModelContactFwdDynamicsWithThrustsTpl
   VectorXs armature_;
   Scalar JMinvJt_damping_;
   bool enable_force_;
-  std::size_t nf_;         //!< Number of thrusters
-  bool robot_only_costs_;  //!< True when cost model uses underlying
-                           //!< StateMultibody (ndx=2*nv)
+  std::size_t nf_;              //!< Number of thrusters
+  bool robot_only_costs_;       //!< True when cost model uses underlying
+                                //!< StateMultibody (ndx=2*nv)
+  VectorXs thrust_reg_weight_;  //!< Per-thruster weight for 0.5*sum(w_i*f_i^2)
 };
 
 template <typename _Scalar>
