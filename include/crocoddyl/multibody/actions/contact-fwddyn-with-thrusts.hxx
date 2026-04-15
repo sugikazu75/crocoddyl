@@ -254,8 +254,9 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
     d->df_du.topRows(nc).noalias() =
         -f_partial_dtau * d->multibody.actuation->dtau_du;
     contacts_->updateAccelerationDiff(d->multibody.contacts,
-                                      d->Fx.bottomRows(nv));
-    contacts_->updateForceDiff(d->multibody.contacts, d->df_dx.topRows(nc),
+                                      d->Fx.bottomRows(nv).leftCols(2 * nv));
+    contacts_->updateForceDiff(d->multibody.contacts,
+                               d->df_dx.topRows(nc).leftCols(2 * nv),
                                d->df_du.topRows(nc));
   }
   if (robot_only_costs_) {
