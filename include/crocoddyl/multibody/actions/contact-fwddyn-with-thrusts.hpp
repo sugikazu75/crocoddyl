@@ -319,6 +319,12 @@ class IntegratedActionModelEulerWithThrustsTpl
   virtual bool checkData(
       const std::shared_ptr<ActionDataAbstract>& data) override;
 
+  virtual void quasiStatic(const std::shared_ptr<ActionDataAbstract>& data,
+                           Eigen::Ref<VectorXs> u,
+                           const Eigen::Ref<const VectorXs>& x,
+                           const std::size_t maxiter = 100,
+                           const Scalar tol = Scalar(1e-9)) override;
+
   template <typename NewScalar>
   IntegratedActionModelEulerWithThrustsTpl<NewScalar> cast() const;
 

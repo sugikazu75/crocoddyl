@@ -390,17 +390,21 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
   pinocchio::computeJointJacobians(*pinocchio_, d->pinocchio, q);
   pinocchio::rnea(*pinocchio_, d->pinocchio, q, d->tmp_xstatic.segment(nq, nv),
                   d->tmp_xstatic.segment(nq, nv));
-
   actuation_->calc(d->multibody.actuation, d->tmp_xstatic, u);
   actuation_->calcDiff(d->multibody.actuation, d->tmp_xstatic, u);
   contacts_->calc(d->multibody.contacts, d->tmp_xstatic.head(nq + nv));
+
+  // Joints must balance: g - W*f = S*tau_joints + Jc^T*lambda
+  // Subtract the thrust contribution already handled by the current state
+  VectorXs tau_residual = d->pinocchio.tau - d->multibody.actuation->tau;
 
   // Allocates memory
   d->tmp_Jstatic.conservativeResize(nv, nu_ + nc);
   d->tmp_Jstatic.leftCols(nu_) = d->multibody.actuation->dtau_du;
   d->tmp_Jstatic.rightCols(nc) =
       d->multibody.contacts->Jc.topRows(nc).transpose();
-  u.noalias() = (pseudoInverse(d->tmp_Jstatic) * d->pinocchio.tau).head(nu_);
+  u.noalias() = (pseudoInverse(d->tmp_Jstatic) * tau_residual).head(nu_);
+  u.head(nf_).setZero();
   d->pinocchio.tau.setZero();
 }
 
@@ -713,6 +717,14 @@ bool IntegratedActionModelEulerWithThrustsTpl<Scalar>::checkData(
     const std::shared_ptr<ActionDataAbstract>& data) {
   std::shared_ptr<Data> d = std::dynamic_pointer_cast<Data>(data);
   return d != nullptr;
+}
+
+template <typename Scalar>
+void IntegratedActionModelEulerWithThrustsTpl<Scalar>::quasiStatic(
+    const std::shared_ptr<ActionDataAbstract>& data, Eigen::Ref<VectorXs> u,
+    const Eigen::Ref<const VectorXs>& x, const std::size_t, const Scalar) {
+  Data* d = static_cast<Data*>(data.get());
+  differential_->quasiStatic(d->differential, u, x);
 }
 
 template <typename Scalar>
