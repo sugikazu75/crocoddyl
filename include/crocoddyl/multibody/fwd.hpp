@@ -26,9 +26,6 @@ template <typename Scalar>
 struct ThrusterTpl;
 
 template <typename Scalar>
-struct RotorTpl;
-
-template <typename Scalar>
 struct DistributedThrusterTpl;
 
 template <typename Scalar>
@@ -61,11 +58,6 @@ template <typename Scalar>
 class DifferentialActionModelFreeFwdDynamicsTpl;
 template <typename Scalar>
 struct DifferentialActionDataFreeFwdDynamicsTpl;
-
-template <typename Scalar>
-class DifferentialActionModelFreeThrustFwdDynamicsTpl;
-template <typename Scalar>
-struct DifferentialActionDataFreeThrustFwdDynamicsTpl;
 
 template <typename Scalar>
 class DifferentialActionModelFreeInvDynamicsTpl;
@@ -270,7 +262,6 @@ struct ImpulseDataMultipleTpl;
 typedef ActuationModelFloatingBaseTpl<double> ActuationModelFloatingBase;
 typedef ActuationModelFullTpl<double> ActuationModelFull;
 typedef ThrusterTpl<double> Thruster;
-typedef RotorTpl<double> Rotor;
 typedef DistributedThrusterTpl<double> DistributedThruster;
 typedef ActuationModelFloatingBaseThrustersTpl<double>
     ActuationModelFloatingBaseThrusters;
@@ -291,10 +282,6 @@ typedef DifferentialActionModelFreeFwdDynamicsTpl<double>
     DifferentialActionModelFreeFwdDynamics;
 typedef DifferentialActionDataFreeFwdDynamicsTpl<double>
     DifferentialActionDataFreeFwdDynamics;
-typedef DifferentialActionModelFreeThrustFwdDynamicsTpl<double>
-    DifferentialActionModelFreeThrustFwdDynamics;
-typedef DifferentialActionDataFreeThrustFwdDynamicsTpl<double>
-    DifferentialActionDataFreeThrustFwdDynamics;
 typedef DifferentialActionModelFreeInvDynamicsTpl<double>
     DifferentialActionModelFreeInvDynamics;
 typedef DifferentialActionDataFreeInvDynamicsTpl<double>
