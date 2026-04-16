@@ -37,6 +37,12 @@ class ActuationModelFloatingBaseDistributedThrustersTpl;
 template <typename Scalar>
 struct ActuationDataFloatingBaseDistributedThrustersTpl;
 
+template <typename Scalar>
+class ActuationModelFloatingBaseThrusterRatesTpl;
+
+template <typename Scalar>
+struct ActuationDataFloatingBaseThrusterRatesTpl;
+
 // force
 template <typename Scala>
 struct ForceDataAbstractTpl;
@@ -73,6 +79,16 @@ template <typename Scalar>
 class DifferentialActionModelContactInvDynamicsTpl;
 template <typename Scalar>
 struct DifferentialActionDataContactInvDynamicsTpl;
+
+template <typename Scalar>
+class IntegratedActionModelEulerWithThrustsTpl;
+template <typename Scalar>
+struct IntegratedActionDataEulerWithThrustsTpl;
+
+template <typename Scalar>
+class DifferentialActionModelContactFwdDynamicsWithThrustsTpl;
+template <typename Scalar>
+struct DifferentialActionDataContactFwdDynamicsWithThrustsTpl;
 
 // numdiff
 template <typename Scalar>
@@ -211,6 +227,9 @@ class CoPSupportTpl;
 template <typename Scalar>
 class StateMultibodyTpl;
 
+template <typename Scalar>
+class StateMultibodyWithThrustsTpl;
+
 // data collector
 template <typename Scalar>
 struct DataCollectorMultibodyTpl;
@@ -269,6 +288,10 @@ typedef ActuationModelFloatingBaseDistributedThrustersTpl<double>
     ActuationModelFloatingBaseDistributedThrusters;
 typedef ActuationDataFloatingBaseDistributedThrustersTpl<double>
     ActuationDataFloatingBaseDistributedThrusters;
+typedef ActuationModelFloatingBaseThrusterRatesTpl<double>
+    ActuationModelFloatingBaseThrusterRates;
+typedef ActuationDataFloatingBaseThrusterRatesTpl<double>
+    ActuationDataFloatingBaseThrusterRates;
 
 typedef ForceDataAbstractTpl<double> ForceDataAbstract;
 
@@ -294,6 +317,14 @@ typedef DifferentialActionModelContactInvDynamicsTpl<double>
     DifferentialActionModelContactInvDynamics;
 typedef DifferentialActionDataContactInvDynamicsTpl<double>
     DifferentialActionDataContactInvDynamics;
+typedef IntegratedActionModelEulerWithThrustsTpl<double>
+    IntegratedActionModelEulerWithThrusts;
+typedef IntegratedActionDataEulerWithThrustsTpl<double>
+    IntegratedActionDataEulerWithThrusts;
+typedef DifferentialActionModelContactFwdDynamicsWithThrustsTpl<double>
+    DifferentialActionModelContactFwdDynamicsWithThrusts;
+typedef DifferentialActionDataContactFwdDynamicsWithThrustsTpl<double>
+    DifferentialActionDataContactFwdDynamicsWithThrusts;
 
 typedef CostModelNumDiffTpl<double> CostModelNumDiff;
 typedef CostDataNumDiffTpl<double> CostDataNumDiff;
@@ -372,6 +403,7 @@ typedef ContactModel6DTpl<double> ContactModel6D;
 typedef ContactData6DTpl<double> ContactData6D;
 
 typedef StateMultibodyTpl<double> StateMultibody;
+typedef StateMultibodyWithThrustsTpl<double> StateMultibodyWithThrusts;
 
 typedef DataCollectorMultibodyTpl<double> DataCollectorMultibody;
 typedef DataCollectorActMultibodyTpl<double> DataCollectorActMultibody;
