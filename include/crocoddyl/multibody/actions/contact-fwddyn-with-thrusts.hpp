@@ -149,10 +149,16 @@ class DifferentialActionModelContactFwdDynamicsWithThrustsTpl
   pinocchio::ModelTpl<Scalar>& get_pinocchio() const;
   const VectorXs& get_armature() const;
   const Scalar get_damping_factor() const;
+  std::size_t get_nf() const;
   const VectorXs& get_thrust_reg_weight() const;
+  const VectorXs& get_thrust_barrier_weight() const;
+  const VectorXs& get_thrust_lb() const;
+  const VectorXs& get_thrust_ub() const;
   void set_armature(const VectorXs& armature);
   void set_damping_factor(const Scalar damping);
   void set_thrust_reg_weight(const VectorXs& weight);
+  void set_thrust_barrier(const VectorXs& weight, const VectorXs& lb,
+                          const VectorXs& ub);
 
   template <typename NewScalar>
   DifferentialActionModelContactFwdDynamicsWithThrustsTpl<NewScalar> cast()
@@ -181,6 +187,9 @@ class DifferentialActionModelContactFwdDynamicsWithThrustsTpl
   bool robot_only_costs_;       //!< True when cost model uses underlying
                                 //!< StateMultibody (ndx=2*nv)
   VectorXs thrust_reg_weight_;  //!< Per-thruster weight for 0.5*sum(w_i*f_i^2)
+  VectorXs thrust_barrier_weight_;  //!< Per-thruster quadratic-barrier weight
+  VectorXs thrust_lb_;              //!< Thrust lower bound for barrier
+  VectorXs thrust_ub_;              //!< Thrust upper bound for barrier
 };
 
 template <typename _Scalar>
@@ -195,6 +204,7 @@ struct DifferentialActionDataContactFwdDynamicsWithThrustsTpl
       DataCollectorJointActMultibodyInContact;
   typedef typename MathBase::VectorXs VectorXs;
   typedef typename MathBase::MatrixXs MatrixXs;
+  typedef typename MathBase::ArrayXs ArrayXs;
 
   template <template <typename Scalar> class Model>
   explicit DifferentialActionDataContactFwdDynamicsWithThrustsTpl(
@@ -216,7 +226,9 @@ struct DifferentialActionDataContactFwdDynamicsWithThrustsTpl
         df_du(model->get_contacts()->get_nc_total(), model->get_nu()),
         tmp_xstatic(model->get_state()->get_nx()),
         tmp_Jstatic(model->get_state()->get_nv(),
-                    model->get_nu() + model->get_contacts()->get_nc_total()) {
+                    model->get_nu() + model->get_contacts()->get_nc_total()),
+        rlb_min(model->get_nf()),
+        rub_max(model->get_nf()) {
     multibody.joint->dtau_du.diagonal().setOnes();
     // Share memory only when the cost model's ndx matches the action's ndx.
     // When costs use the underlying StateMultibody (robot-only state), their
@@ -234,6 +246,8 @@ struct DifferentialActionDataContactFwdDynamicsWithThrustsTpl
     df_du.setZero();
     tmp_xstatic.setZero();
     tmp_Jstatic.setZero();
+    rlb_min.setZero();
+    rub_max.setZero();
     pinocchio.lambda_c.resize(model->get_contacts()->get_nc_total());
     pinocchio.lambda_c.setZero();
   }
@@ -248,6 +262,8 @@ struct DifferentialActionDataContactFwdDynamicsWithThrustsTpl
   MatrixXs df_du;        //!< Contact force Jacobian w.r.t. control (nc x nu)
   VectorXs tmp_xstatic;  //!< Scratch: augmented static state [q, 0, f]
   MatrixXs tmp_Jstatic;  //!< Scratch: stacked [dtau_du | Jc^T]
+  ArrayXs rlb_min;       //!< Weighted lower-barrier residual: w*(f-lb).min(0)
+  ArrayXs rub_max;       //!< Weighted upper-barrier residual: w*(f-ub).max(0)
 
   using Base::cost;
   using Base::Fu;

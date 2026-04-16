@@ -13,6 +13,7 @@
 #include <pinocchio/algorithm/joint-configuration.hpp>
 #include <pinocchio/algorithm/kinematics-derivatives.hpp>
 #include <pinocchio/algorithm/rnea-derivatives.hpp>
+#include <pinocchio/utils/static-if.hpp>
 
 namespace crocoddyl {
 
@@ -86,6 +87,10 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::init() {
   Base::u_ub_ = actuation_->get_u_ub();
   robot_only_costs_ = (costs_->get_state()->get_ndx() != state_->get_ndx());
   thrust_reg_weight_ = VectorXs::Zero(nf_);
+  thrust_barrier_weight_ = VectorXs::Zero(nf_);
+  thrust_lb_ =
+      VectorXs::Constant(nf_, -std::numeric_limits<Scalar>::infinity());
+  thrust_ub_ = VectorXs::Constant(nf_, std::numeric_limits<Scalar>::infinity());
 }
 
 template <typename Scalar>
@@ -146,10 +151,22 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
   // When costs use underlying StateMultibody, pass robot-only state slice
   costs_->calc(d->costs, robot_only_costs_ ? x.head(nq + nv) : x, u);
   d->cost = d->costs->cost;
+
   // Thrust regularization: 0.5 * sum_i(w_i * f_i^2)  (f = x.tail(nf_))
   if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
     d->cost += Scalar(0.5) * thrust_reg_weight_.dot(x.tail(nf_).cwiseAbs2());
   }
+
+  // Thrust quadratic barrier
+  if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+    d->rlb_min = (x.tail(nf_) - thrust_lb_).array().min(Scalar(0.));
+    d->rub_max = (x.tail(nf_) - thrust_ub_).array().max(Scalar(0.));
+    d->rlb_min *= thrust_barrier_weight_.array();
+    d->rub_max *= thrust_barrier_weight_.array();
+    d->cost += Scalar(0.5) * d->rlb_min.matrix().squaredNorm() +
+               Scalar(0.5) * d->rub_max.matrix().squaredNorm();
+  }
+
   if (constraints_ != nullptr) {
     d->constraints->resize(this, d);
     constraints_->calc(d->constraints, x, u);
@@ -178,9 +195,20 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
   pinocchio::computeCentroidalMomentum(*pinocchio_, d->pinocchio);
   costs_->calc(d->costs, robot_only_costs_ ? x.head(nq + nv) : x);
   d->cost = d->costs->cost;
+
   if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
     d->cost += Scalar(0.5) * thrust_reg_weight_.dot(x.tail(nf_).cwiseAbs2());
   }
+
+  if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+    d->rlb_min = (x.tail(nf_) - thrust_lb_).array().min(Scalar(0.));
+    d->rub_max = (x.tail(nf_) - thrust_ub_).array().max(Scalar(0.));
+    d->rlb_min *= thrust_barrier_weight_.array();
+    d->rub_max *= thrust_barrier_weight_.array();
+    d->cost += Scalar(0.5) * d->rlb_min.matrix().squaredNorm() +
+               Scalar(0.5) * d->rub_max.matrix().squaredNorm();
+  }
+
   if (constraints_ != nullptr) {
     d->constraints->resize(this, d, false);
     constraints_->calc(d->constraints, x);
@@ -225,8 +253,9 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
       d->Kinv);
 
   actuation_->calcDiff(d->multibody.actuation, x, u);
-  // Contact model uses StateMultibody: pass only the robot-state slice
-  contacts_->calcDiff(d->multibody.contacts, x.head(nq + nv));
+  contacts_->calcDiff(d->multibody.contacts,
+                      x.head(nq + nv));  // Contact model uses StateMultibody:
+                                         // pass only the robot-state slice
 
   const Eigen::Block<MatrixXs> a_partial_dtau = d->Kinv.topLeftCorner(nv, nv);
   const Eigen::Block<MatrixXs> a_partial_da = d->Kinv.topRightCorner(nv, nc);
@@ -237,13 +266,12 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
   d->Fx.leftCols(nv).noalias() = -a_partial_dtau * d->pinocchio.dtau_dq;
   d->Fx.block(0, nv, nv, nv).noalias() = -a_partial_dtau * d->pinocchio.dtau_dv;
   d->Fx.rightCols(nf_).setZero();
-  // da0_dx has shape (nc, 2*nv): only affects the [q,v] columns of Fx
   d->Fx.leftCols(2 * nv).noalias() -=
-      a_partial_da * d->multibody.contacts->da0_dx.topRows(nc);
+      a_partial_da * d->multibody.contacts->da0_dx.topRows(
+                         nc);  // da0_dx has shape (nc, 2*nv): only affects the
+                               // [q,v] columns of Fx
   d->Fx.noalias() += a_partial_dtau * d->multibody.actuation->dtau_dx;
-
   d->Fu.noalias() = a_partial_dtau * d->multibody.actuation->dtau_du;
-
   d->multibody.joint->da_dx = d->Fx;
   d->multibody.joint->da_du = d->Fu;
 
@@ -280,6 +308,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
     d->Lxu.topRows(robot_ndx) = d->costs->Lxu;
     d->Lxu.bottomRows(nf_).setZero();
     d->Luu = d->costs->Luu;
+
     // Thrust regularization gradient: dL/df_i = w_i*f_i, d^2L/df_i^2 = w_i
     if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
       d->Lx.tail(nf_).array() +=
@@ -287,8 +316,29 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
       d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
           thrust_reg_weight_.array();
     }
+
+    // Thrust barrier gradient/Hessian
+    if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+      // gradient: (rlb_min + rub_max) * weights  [rlb_min/rub_max already
+      // weighted]
+      d->Lx.tail(nf_).array() +=
+          (d->rlb_min + d->rub_max) * thrust_barrier_weight_.array();
+      using pinocchio::internal::if_then_else;
+      const auto f = x.tail(nf_);
+      const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
+        d->Lxx(k + i, k + i) +=
+            thrust_barrier_weight_[i] *
+            if_then_else(
+                pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
+                Scalar(1.),
+                if_then_else(pinocchio::internal::GE, f[i] - thrust_ub_[i],
+                             Scalar(0.), Scalar(1.), Scalar(0.)));
+      }
+    }
   } else {
     costs_->calcDiff(d->costs, x, u);
+
     // Thrust regularization gradient (non-robot-only path)
     if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
       d->Lx.tail(nf_).array() +=
@@ -296,7 +346,26 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
       d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
           thrust_reg_weight_.array();
     }
+
+    // Thrust barrier gradient/Hessian (non-robot-only path)
+    if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          (d->rlb_min + d->rub_max) * thrust_barrier_weight_.array();
+      using pinocchio::internal::if_then_else;
+      const auto f = x.tail(nf_);
+      const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
+        d->Lxx(k + i, k + i) +=
+            thrust_barrier_weight_[i] *
+            if_then_else(
+                pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
+                Scalar(1.),
+                if_then_else(pinocchio::internal::GE, f[i] - thrust_ub_[i],
+                             Scalar(0.), Scalar(1.), Scalar(0.)));
+      }
+    }
   }
+
   if (constraints_ != nullptr) {
     constraints_->calcDiff(d->constraints, x, u);
   }
@@ -322,19 +391,55 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
     d->Lxx.topLeftCorner(robot_ndx, robot_ndx) = d->costs->Lxx;
     d->Lxx.topRightCorner(robot_ndx, nf_).setZero();
     d->Lxx.bottomRows(nf_).setZero();
+
     if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
       d->Lx.tail(nf_).array() +=
           thrust_reg_weight_.array() * x.tail(nf_).array();
       d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
           thrust_reg_weight_.array();
     }
+
+    if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          (d->rlb_min + d->rub_max) * thrust_barrier_weight_.array();
+      using pinocchio::internal::if_then_else;
+      const auto f = x.tail(nf_);
+      const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
+        d->Lxx(k + i, k + i) +=
+            thrust_barrier_weight_[i] *
+            if_then_else(
+                pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
+                Scalar(1.),
+                if_then_else(pinocchio::internal::GE, f[i] - thrust_ub_[i],
+                             Scalar(0.), Scalar(1.), Scalar(0.)));
+      }
+    }
   } else {
     costs_->calcDiff(d->costs, x);
+
     if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
       d->Lx.tail(nf_).array() +=
           thrust_reg_weight_.array() * x.tail(nf_).array();
       d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
           thrust_reg_weight_.array();
+    }
+
+    if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          (d->rlb_min + d->rub_max) * thrust_barrier_weight_.array();
+      using pinocchio::internal::if_then_else;
+      const auto f = x.tail(nf_);
+      const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
+        d->Lxx(k + i, k + i) +=
+            thrust_barrier_weight_[i] *
+            if_then_else(
+                pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
+                Scalar(1.),
+                if_then_else(pinocchio::internal::GE, f[i] - thrust_ub_[i],
+                             Scalar(0.), Scalar(1.), Scalar(0.)));
+      }
     }
   }
   if (constraints_ != nullptr) {
@@ -598,6 +703,12 @@ DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
 }
 
 template <typename Scalar>
+std::size_t DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_nf() const {
+  return nf_;
+}
+
+template <typename Scalar>
 const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
     Scalar>::VectorXs&
 DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
@@ -617,6 +728,53 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
                  << "thrust_reg_weight elements must be non-negative");
   }
   thrust_reg_weight_ = weight;
+}
+
+template <typename Scalar>
+const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_thrust_barrier_weight() const {
+  return thrust_barrier_weight_;
+}
+
+template <typename Scalar>
+const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_thrust_lb()
+    const {
+  return thrust_lb_;
+}
+
+template <typename Scalar>
+const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_thrust_ub()
+    const {
+  return thrust_ub_;
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::set_thrust_barrier(const VectorXs& weight, const VectorXs& lb,
+                                const VectorXs& ub) {
+  if (static_cast<std::size_t>(weight.size()) != nf_ ||
+      static_cast<std::size_t>(lb.size()) != nf_ ||
+      static_cast<std::size_t>(ub.size()) != nf_) {
+    throw_pretty("Invalid argument: " << "weight, lb, ub must all have size nf="
+                                      << nf_);
+  }
+  if ((weight.array() < Scalar(0.)).any()) {
+    throw_pretty("Invalid argument: "
+                 << "thrust_barrier_weight elements must be non-negative");
+  }
+  if ((lb.array() > ub.array()).any()) {
+    throw_pretty(
+        "Invalid argument: " << "thrust lower bound must be <= upper bound");
+  }
+  thrust_barrier_weight_ = weight;
+  thrust_lb_ = lb;
+  thrust_ub_ = ub;
 }
 
 template <typename Scalar>
