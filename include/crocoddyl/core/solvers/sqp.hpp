@@ -117,40 +117,42 @@ class SolverSQPTpl : public SolverAbstractTpl<_Scalar> {
   virtual void resizeTerminalData() override;
   void updateStateAndControlIndex();
 
-  Scalar reg_incfactor_;
-  Scalar reg_decfactor_;
-  Scalar th_grad_;
-  Scalar th_noimprovement_;
-  Scalar th_stepdec_;
-  Scalar th_stepinc_;
-  Scalar th_minimprove_;
-  Scalar th_acceptnegstep_;
-  Scalar th_acceptminstep_;
-  Scalar rho_;
-  Scalar th_minfeas_;
-  Scalar upsilon_;
-  Scalar upsilon_decfactor_;
-  bool zero_upsilon_;
-  Scalar qp_feas_tol_;
-  std::size_t qp_maxiters_;
-  bool with_du_bounds_;
-  VectorXs du_max_;
+  Scalar reg_incfactor_;     //!< Regularization increase factor.
+  Scalar reg_decfactor_;     //!< Regularization decrease factor.
+  Scalar th_grad_;           //!< Gradient-based stopping threshold.
+  Scalar th_noimprovement_;  //!< Acceptance threshold for tiny improvements.
+  Scalar th_stepdec_;        //!< Step threshold to decrease regularization.
+  Scalar th_stepinc_;        //!< Step threshold to increase regularization.
+  Scalar th_minimprove_;     //!< Minimum merit improvement threshold.
+  Scalar th_acceptnegstep_;  //!< Acceptance scaling for negative expected step.
+  Scalar th_acceptminstep_;  //!< Minimum step length accepted.
+  Scalar rho_;               //!< Merit function update coefficient.
+  Scalar th_minfeas_;        //!< Feasibility threshold for merit update.
+  Scalar upsilon_;           //!< Current merit penalty weight.
+  Scalar upsilon_decfactor_;  //!< Merit penalty decay factor.
+  bool zero_upsilon_;         //!< If true, initialize penalty to zero.
+  Scalar qp_feas_tol_;        //!< QP feasibility tolerance.
+  std::size_t qp_maxiters_;   //!< Max iterations of inner QP solver.
+  bool with_du_bounds_;       //!< Enable |u_{k+1}-u_k| bounds.
+  VectorXs du_max_;           //!< Per-control absolute delta-u limits.
 
-  std::size_t n_;
-  std::size_t m_;
-  std::size_t p_;
-  VectorXs x_;
-  SparseMatrixXs Q_;
-  SparseMatrixXs A_;
-  SparseMatrixXs G_;
-  VectorXs c_;
-  VectorXs b_;
-  VectorXs h_;
-  std::vector<std::size_t> xs_idx_;
-  std::vector<std::size_t> us_idx_;
-  std::vector<VectorXs> Lxx_dx_;
-  std::vector<VectorXs> Luu_du_;
-  std::vector<VectorXs> Lxu_du_;
+  std::size_t n_;     //!< Number of QP decision variables.
+  std::size_t m_;     //!< Number of equality constraints.
+  std::size_t p_;     //!< Number of inequality constraints.
+  VectorXs x_;        //!< Current QP solution vector.
+  SparseMatrixXs Q_;  //!< QP Hessian matrix.
+  SparseMatrixXs A_;  //!< Equality constraint Jacobian.
+  SparseMatrixXs G_;  //!< Inequality constraint Jacobian.
+  VectorXs c_;        //!< QP linear cost term.
+  VectorXs b_;        //!< Equality right-hand side.
+  VectorXs h_;        //!< Inequality upper bounds.
+  std::vector<std::size_t>
+      xs_idx_;  //!< State block offsets in decision vector.
+  std::vector<std::size_t>
+      us_idx_;                    //!< Control block offsets in decision vector.
+  std::vector<VectorXs> Lxx_dx_;  //!< Workspace for Lxx*dx terms.
+  std::vector<VectorXs> Luu_du_;  //!< Workspace for Luu*du terms.
+  std::vector<VectorXs> Lxu_du_;  //!< Workspace for Lxu*du terms.
 
   using SolverAbstract::acceptstep_;
   using SolverAbstract::alphas_;

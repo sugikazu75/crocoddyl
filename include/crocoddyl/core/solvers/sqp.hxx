@@ -187,31 +187,38 @@ void SolverSQPTpl<Scalar>::computeCandidate(const Scalar steplength) {
 template <typename Scalar>
 void SolverSQPTpl<Scalar>::computeQuadraticModel() {
   START_PROFILER("SolverSQP::computeQuadraticModel");
-  typedef Eigen::Triplet<Scalar> Triplet;
-  const std::size_t T = problem_->get_T();
-  if (iter_) {
-    updateStateAndControlIndex();
-  }
-  std::vector<Triplet> q_triplets;
-  std::vector<Triplet> a_triplets;
-  std::vector<Triplet> g_triplets;
-  q_triplets.reserve(8 * n_);
-  a_triplets.reserve(8 * n_);
-  g_triplets.reserve(16 * n_);
-
-  auto push_dense_block = [](std::vector<Triplet>& triplets, const MatrixXs& M,
-                             const std::size_t row0, const std::size_t col0,
-                             const Scalar scale = Scalar(1)) {
-    for (Eigen::Index i = 0; i < M.rows(); ++i) {
-      for (Eigen::Index j = 0; j < M.cols(); ++j) {
-        const Scalar v = scale * M(i, j);
-        if (v != Scalar(0)) {
-          triplets.emplace_back(static_cast<Eigen::Index>(row0) + i,
-                                static_cast<Eigen::Index>(col0) + j, v);
+  auto addBlock = [=](std::vector<Eigen::Triplet<Scalar> >& T, std::size_t i0,
+                      std::size_t j0, const MatrixXs& M,
+                      Scalar eps = Scalar(0)) {
+    const std::size_t r = static_cast<std::size_t>(M.rows());
+    const std::size_t c = static_cast<std::size_t>(M.cols());
+    for (std::size_t j = 0; j < c; ++j) {
+      for (std::size_t i = 0; i < r; ++i) {
+        const Scalar v = M(i, j);
+        if (v != eps) {
+          T.emplace_back(i0 + i, j0 + j, v);
         }
       }
     }
   };
+  auto addIdentity = [=](std::vector<Eigen::Triplet<Scalar> >& T,
+                         std::size_t i0, std::size_t j0, std::size_t n,
+                         Scalar scale = Scalar(1.0)) {
+    T.reserve(T.size() + n);
+    for (std::size_t k = 0; k < n; ++k) {
+      T.emplace_back(i0 + k, j0 + k, scale);
+    }
+  };
+  const std::size_t T = problem_->get_T();
+  if (iter_) {
+    updateStateAndControlIndex();
+  }
+  std::vector<Eigen::Triplet<Scalar> > q_triplets;
+  std::vector<Eigen::Triplet<Scalar> > a_triplets;
+  std::vector<Eigen::Triplet<Scalar> > g_triplets;
+  q_triplets.reserve(8 * n_);
+  a_triplets.reserve(8 * n_);
+  g_triplets.reserve(16 * n_);
 
   c_.setZero(n_);
   b_.setZero(m_);
@@ -220,11 +227,8 @@ void SolverSQPTpl<Scalar>::computeQuadraticModel() {
   const std::size_t ndx = problem_->get_ndx();
   std::size_t eq_idx = 0;
   std::size_t ineq_idx = 0;
-  for (std::size_t i = 0; i < ndx; ++i) {
-    a_triplets.emplace_back(static_cast<Eigen::Index>(eq_idx + i),
-                            static_cast<Eigen::Index>(xs_idx_[0] + i),
-                            Scalar(1));
-  }
+  // Initial gap equality: dx0 = f0
+  addIdentity(a_triplets, eq_idx, xs_idx_[0], ndx, Scalar(1.0));
   b_.segment(eq_idx, ndx) = fs_[0];
   eq_idx += ndx;
 
@@ -240,86 +244,78 @@ void SolverSQPTpl<Scalar>::computeQuadraticModel() {
     const std::size_t x_idx = xs_idx_[t];
     const std::size_t u_idx = us_idx_[t];
 
-    push_dense_block(q_triplets, data->Lxx, x_idx, x_idx);
+    // Quadratic cost terms
+    addBlock(q_triplets, x_idx, x_idx, data->Lxx);
     c_.segment(x_idx, ndx) = data->Lx;
     if (nu > 0) {
-      push_dense_block(q_triplets, data->Luu, u_idx, u_idx);
-      push_dense_block(q_triplets, data->Lxu, x_idx, u_idx);
-      push_dense_block(q_triplets, data->Lxu.transpose(), u_idx, x_idx);
+      addBlock(q_triplets, u_idx, u_idx, data->Luu);
+      addBlock(q_triplets, x_idx, u_idx, data->Lxu);
+      addBlock(q_triplets, u_idx, x_idx, data->Lxu.transpose());
       c_.segment(u_idx, nu) = data->Lu;
     }
 
-    push_dense_block(a_triplets, data->Fx, eq_idx, x_idx);
+    // Dynamics equalities: Fx dx + Fu du - dxp = -f
+    addBlock(a_triplets, eq_idx, x_idx, data->Fx);
     if (nu > 0) {
-      push_dense_block(a_triplets, data->Fu, eq_idx, u_idx);
+      addBlock(a_triplets, eq_idx, u_idx, data->Fu);
     }
-    for (std::size_t i = 0; i < ndx; ++i) {
-      a_triplets.emplace_back(static_cast<Eigen::Index>(eq_idx + i),
-                              static_cast<Eigen::Index>(xp_idx + i),
-                              Scalar(-1));
-    }
+    addIdentity(a_triplets, eq_idx, xp_idx, ndx, Scalar(-1.0));
     b_.segment(eq_idx, ndx) = -fs_[t + 1];
     eq_idx += ndx;
 
+    // Path equalities: Hx dx + Hu du = -h
     if (nh > 0) {
-      push_dense_block(a_triplets, data->Hx, eq_idx, x_idx);
+      addBlock(a_triplets, eq_idx, x_idx, data->Hx);
       if (nu > 0) {
-        push_dense_block(a_triplets, data->Hu, eq_idx, u_idx);
+        addBlock(a_triplets, eq_idx, u_idx, data->Hu);
       }
       b_.segment(eq_idx, nh) = -data->h;
       eq_idx += nh;
     }
 
+    // Path inequalities: g_lb - g <= Gx dx + Gu du <= g_ub - g
     if (ng > 0) {
-      push_dense_block(g_triplets, data->Gx, ineq_idx, x_idx);
+      // Upper side: Gx dx + Gu du <= g_ub - g
+      addBlock(g_triplets, ineq_idx, x_idx, data->Gx);
       if (nu > 0) {
-        push_dense_block(g_triplets, data->Gu, ineq_idx, u_idx);
+        addBlock(g_triplets, ineq_idx, u_idx, data->Gu);
       }
       h_.segment(ineq_idx, ng) = model->get_g_ub() - data->g;
       ineq_idx += ng;
 
-      push_dense_block(g_triplets, data->Gx, ineq_idx, x_idx, Scalar(-1));
+      // Lower side: -Gx dx - Gu du <= g - g_lb
+      addBlock(g_triplets, ineq_idx, x_idx, -data->Gx);
       if (nu > 0) {
-        push_dense_block(g_triplets, data->Gu, ineq_idx, u_idx, Scalar(-1));
+        addBlock(g_triplets, ineq_idx, u_idx, -data->Gu);
       }
       h_.segment(ineq_idx, ng) = data->g - model->get_g_lb();
       ineq_idx += ng;
     }
 
+    // State bounds: x_lb - x <= dx <= x_ub - x (internal nodes only)
     if (t > 0 && t < T - 1) {
-      for (std::size_t i = 0; i < ndx; ++i) {
-        g_triplets.emplace_back(static_cast<Eigen::Index>(ineq_idx + i),
-                                static_cast<Eigen::Index>(x_idx + i),
-                                Scalar(1));
-      }
+      // Upper bound: dx <= x_ub - x
+      addIdentity(g_triplets, ineq_idx, x_idx, ndx, Scalar(1));
       model->get_state()->safe_diff(xs_[t], model->get_state()->get_ub(),
                                     h_.segment(ineq_idx, ndx));
       ineq_idx += ndx;
 
-      for (std::size_t i = 0; i < ndx; ++i) {
-        g_triplets.emplace_back(static_cast<Eigen::Index>(ineq_idx + i),
-                                static_cast<Eigen::Index>(x_idx + i),
-                                Scalar(-1));
-      }
+      // Lower bound: -dx <= x - x_lb
+      addIdentity(g_triplets, ineq_idx, x_idx, ndx, Scalar(-1));
       model->get_state()->safe_diff(model->get_state()->get_lb(), xs_[t],
                                     h_.segment(ineq_idx, ndx));
       ineq_idx += ndx;
     }
 
+    // Control bounds: u_lb - u <= du <= u_ub - u
     if (nu > 0) {
-      for (std::size_t i = 0; i < nu; ++i) {
-        g_triplets.emplace_back(static_cast<Eigen::Index>(ineq_idx + i),
-                                static_cast<Eigen::Index>(u_idx + i),
-                                Scalar(1));
-      }
+      // Upper bound: du <= u_ub - u
+      addIdentity(g_triplets, ineq_idx, u_idx, nu, Scalar(1));
       h_.segment(ineq_idx, nu) = model->get_u_ub() - us_[t];
       ineq_idx += nu;
 
-      for (std::size_t i = 0; i < nu; ++i) {
-        g_triplets.emplace_back(static_cast<Eigen::Index>(ineq_idx + i),
-                                static_cast<Eigen::Index>(u_idx + i),
-                                Scalar(-1));
-      }
+      // Lower bound: -du <= u - u_lb
+      addIdentity(g_triplets, ineq_idx, u_idx, nu, Scalar(-1));
       h_.segment(ineq_idx, nu) = us_[t] - model->get_u_lb();
       ineq_idx += nu;
     }
@@ -333,29 +329,34 @@ void SolverSQPTpl<Scalar>::computeQuadraticModel() {
   const std::size_t ng_T = model_T->get_ng_T();
   const std::size_t x_idx = xs_idx_[T];
 
-  push_dense_block(q_triplets, data_T->Lxx, x_idx, x_idx);
+  // Terminal cost and regularization
+  addBlock(q_triplets, x_idx, x_idx, data_T->Lxx);
   c_.segment(x_idx, ndx) = data_T->Lx;
   if (preg_ != Scalar(0)) {
     for (std::size_t i = 0; i < n_; ++i) {
-      q_triplets.emplace_back(static_cast<Eigen::Index>(i),
-                              static_cast<Eigen::Index>(i), preg_);
+      q_triplets.emplace_back(i, i, preg_);
     }
   }
 
+  // Terminal equalities: Hx_T dx_T = -h_T
   if (nh_T > 0) {
-    push_dense_block(a_triplets, data_T->Hx, eq_idx, x_idx);
+    addBlock(a_triplets, eq_idx, x_idx, data_T->Hx);
     b_.segment(eq_idx, nh_T) = -data_T->h.head(nh_T);
     eq_idx += nh_T;
   }
+  // Terminal inequalities: g_lb - g <= Gx dx <= g_ub - g
   if (ng_T > 0) {
-    push_dense_block(g_triplets, data_T->Gx, ineq_idx, x_idx);
+    // Upper side: Gx dx <= g_ub - g
+    addBlock(g_triplets, ineq_idx, x_idx, data_T->Gx);
     h_.segment(ineq_idx, ng_T) = model_T->get_g_ub() - data_T->g;
     ineq_idx += ng_T;
 
-    push_dense_block(g_triplets, data_T->Gx, ineq_idx, x_idx, Scalar(-1));
+    // Lower side: -Gx dx <= g - g_lb
+    addBlock(g_triplets, ineq_idx, x_idx, -data_T->Gx);
     h_.segment(ineq_idx, ng_T) = data_T->g - model_T->get_g_lb();
     ineq_idx += ng_T;
   }
+  // Control-variation bounds: -du_max <= du_{t+1} - du_t <= du_max
   if (with_du_bounds_) {
     for (std::size_t t = 0; t + 1 < T; ++t) {
       const std::size_t nu = problem_->get_runningModels()[t]->get_nu();
@@ -371,30 +372,25 @@ void SolverSQPTpl<Scalar>::computeQuadraticModel() {
       const std::size_t up_idx = us_idx_[t + 1];
       const VectorXs du_nom = us_[t + 1] - us_[t];
 
+      // Upper side: du_{t+1} - du_t <= du_max - (u_{t+1} - u_t)
       for (std::size_t i = 0; i < nu; ++i) {
-        g_triplets.emplace_back(static_cast<Eigen::Index>(ineq_idx + i),
-                                static_cast<Eigen::Index>(u_idx + i),
-                                Scalar(-1));
-        g_triplets.emplace_back(static_cast<Eigen::Index>(ineq_idx + i),
-                                static_cast<Eigen::Index>(up_idx + i),
-                                Scalar(1));
+        g_triplets.emplace_back(ineq_idx + i, u_idx + i, Scalar(-1));
+        g_triplets.emplace_back(ineq_idx + i, up_idx + i, Scalar(1));
       }
       h_.segment(ineq_idx, nu) = du_max_ - du_nom;
       ineq_idx += nu;
 
+      // Lower side: -(du_{t+1} - du_t) <= du_max + (u_{t+1} - u_t)
       for (std::size_t i = 0; i < nu; ++i) {
-        g_triplets.emplace_back(static_cast<Eigen::Index>(ineq_idx + i),
-                                static_cast<Eigen::Index>(u_idx + i),
-                                Scalar(1));
-        g_triplets.emplace_back(static_cast<Eigen::Index>(ineq_idx + i),
-                                static_cast<Eigen::Index>(up_idx + i),
-                                Scalar(-1));
+        g_triplets.emplace_back(ineq_idx + i, u_idx + i, Scalar(1));
+        g_triplets.emplace_back(ineq_idx + i, up_idx + i, Scalar(-1));
       }
       h_.segment(ineq_idx, nu) = du_max_ + du_nom;
       ineq_idx += nu;
     }
   }
 
+  // Finalize sparse matrices
   Q_.resize(n_, n_);
   A_.resize(m_, n_);
   G_.resize(p_, n_);
@@ -404,6 +400,9 @@ void SolverSQPTpl<Scalar>::computeQuadraticModel() {
                      [](const Scalar a, const Scalar b) { return a + b; });
   G_.setFromTriplets(g_triplets.begin(), g_triplets.end(),
                      [](const Scalar a, const Scalar b) { return a + b; });
+  Q_.makeCompressed();
+  A_.makeCompressed();
+  G_.makeCompressed();
   STOP_PROFILER("SolverSQP::computeQuadraticModel");
 }
 
