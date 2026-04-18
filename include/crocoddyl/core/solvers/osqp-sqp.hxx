@@ -15,9 +15,9 @@ SolverOsqpSQPTpl<Scalar>::SolverOsqpSQPTpl(
     std::shared_ptr<ShootingProblem> problem)
     : Base(problem),
       osqp_verbose_(false),
-      osqp_max_iter_(4000),
-      osqp_eps_abs_(ScaleNumerics<Scalar>(1e-6)),
-      osqp_eps_rel_(ScaleNumerics<Scalar>(1e-6)),
+      osqp_max_iter_(100),
+      osqp_eps_abs_(ScaleNumerics<Scalar>(1e-4)),
+      osqp_eps_rel_(ScaleNumerics<Scalar>(1e-4)),
       osqp_rho_(Scalar(0.1)),
       osqp_sigma_(Scalar(1e-6)),
       osqp_warm_start_(true),
@@ -233,17 +233,6 @@ void SolverOsqpSQPTpl<Scalar>::computeQuadraticModel() {
       }
       h_lb_.segment(ineq_idx, ng) = model->get_g_lb() - data->g;
       h_.segment(ineq_idx, ng) = model->get_g_ub() - data->g;
-
-      // std::cout << "add path inequalities at stage " << t << ": " << ng << "
-      // constraints" << std::endl; for(int i = 0; i < ng; ++i) {
-      //   if(h_lb_[ineq_idx + i] > h_[ineq_idx + i]) {
-      //     std::cout << "Warning: infeasible lower bound for inequality
-      //     constraint " << ineq_idx + i
-      //               << " at stage " << t << ": h_lb = " << h_lb_[ineq_idx +
-      //               i]
-      //               << ", h_ub = " << h_[ineq_idx + i] << std::endl;
-      //   }
-      // }
       ineq_idx += ng;
     }
 
@@ -254,20 +243,14 @@ void SolverOsqpSQPTpl<Scalar>::computeQuadraticModel() {
                                     h_lb_.segment(ineq_idx, ndx));
       model->get_state()->safe_diff(xs_[t], model->get_state()->get_ub(),
                                     h_.segment(ineq_idx, ndx));
-      // std::cout << "add state bounds at stage " << t << ": " << ndx << "
-      // constraints" << std::endl; for(int i = 0; i < ndx; ++i) {
-      //   if(h_lb_[ineq_idx + i] > h_[ineq_idx + i]) {
-      //     std::cout << "Warning: infeasible lower bound for state constraint
-      //     " << i << " at stage " << t << "ineq_idx: " << ineq_idx + i << "\n"
-      //               << "xs_: " << xs_[t](i)
-      //               << ", x_lb: " << model->get_state()->get_lb()(i)
-      //               << ", x_ub: " << model->get_state()->get_ub()(i)
-      //               << ", h_lb: " << h_lb_[ineq_idx + i]
-      //               << ", h_ub: " << h_[ineq_idx + i] << std::endl;
-      //     std::cout << std::endl;
-      //     std::cout << std::endl;
-      //   }
-      // }
+      for (std::size_t i = 0; i < ndx; ++i) {
+        if (std::isnan(static_cast<double>(h_lb_[ineq_idx + i]))) {
+          h_lb_[ineq_idx + i] = -static_cast<Scalar>(OsqpEigen::INFTY);
+        }
+        if (std::isnan(static_cast<double>(h_[ineq_idx + i]))) {
+          h_[ineq_idx + i] = static_cast<Scalar>(OsqpEigen::INFTY);
+        }
+      }
       ineq_idx += ndx;
     }
 
@@ -276,18 +259,6 @@ void SolverOsqpSQPTpl<Scalar>::computeQuadraticModel() {
       addIdentity(g_triplets, ineq_idx, u_idx, nu, Scalar(1));
       h_lb_.segment(ineq_idx, nu) = model->get_u_lb() - us_[t];
       h_.segment(ineq_idx, nu) = model->get_u_ub() - us_[t];
-
-      // std::cout << "add control bounds at stage " << t << ": " << nu << "
-      // constraints" << std::endl; for(int i = 0; i < nu; ++i) {
-      //   if(h_lb_[ineq_idx + i] > h_[ineq_idx + i]) {
-
-      //     std::cout << "Warning: infeasible lower bound for control
-      //     constraint " << ineq_idx + i
-      //               << " at stage " << t << ": h_lb = " << h_lb_[ineq_idx +
-      //               i]
-      //               << ", h_ub = " << h_[ineq_idx + i] << std::endl;
-      //   }
-      // }
       ineq_idx += nu;
     }
   }
@@ -369,15 +340,6 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
     return true;
   }
 
-  auto to_osqp_upper = [](const Scalar v) -> double {
-    const double dv = static_cast<double>(v);
-    if (std::isnan(dv)) return OsqpEigen::INFTY;
-    if (std::isinf(dv)) return (dv > 0.) ? OsqpEigen::INFTY : -OsqpEigen::INFTY;
-    if (dv > static_cast<double>(OsqpEigen::INFTY)) return OsqpEigen::INFTY;
-    if (dv < -static_cast<double>(OsqpEigen::INFTY)) return -OsqpEigen::INFTY;
-    return static_cast<double>(dv);
-  };
-
   // Build OSQP form: min 0.5 x'P x + q'x s.t. l <= A x <= u.
   // Use the symmetrized local Hessian directly.
   typename Base::SparseMatrixXs Qt(Q_.transpose());
@@ -391,7 +353,11 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
 
   qp_gradient_.resize(static_cast<Eigen::Index>(n_));
   for (std::size_t i = 0; i < n_; ++i) {
-    qp_gradient_[static_cast<Eigen::Index>(i)] = static_cast<double>(c_[i]);
+    const double ci = static_cast<double>(c_[i]);
+    if (!std::isfinite(ci)) {
+      throw_pretty("Invalid gradient entry c_ at index " << i);
+    }
+    qp_gradient_[static_cast<Eigen::Index>(i)] = ci;
   }
 
   // Stack equality and inequality matrices:
@@ -425,9 +391,23 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
     qp_upper_bound_[static_cast<Eigen::Index>(i)] = bi;
   }
   for (std::size_t i = 0; i < p_; ++i) {
+    const double lb = static_cast<double>(h_lb_[i]);
+    const double ub = static_cast<double>(h_[i]);
+    if (std::isnan(lb) || std::isnan(ub)) {
+      throw_pretty("Invalid inequality bound (NaN) at row " << i);
+    }
     qp_lower_bound_[static_cast<Eigen::Index>(m_ + i)] =
-        to_osqp_upper(h_lb_[i]);
-    qp_upper_bound_[static_cast<Eigen::Index>(m_ + i)] = to_osqp_upper(h_[i]);
+        (lb > static_cast<double>(OsqpEigen::INFTY))
+            ? static_cast<double>(OsqpEigen::INFTY)
+            : ((lb < -static_cast<double>(OsqpEigen::INFTY))
+                   ? -static_cast<double>(OsqpEigen::INFTY)
+                   : lb);
+    qp_upper_bound_[static_cast<Eigen::Index>(m_ + i)] =
+        (ub > static_cast<double>(OsqpEigen::INFTY))
+            ? static_cast<double>(OsqpEigen::INFTY)
+            : ((ub < -static_cast<double>(OsqpEigen::INFTY))
+                   ? -static_cast<double>(OsqpEigen::INFTY)
+                   : ub);
     if (qp_lower_bound_[static_cast<Eigen::Index>(m_ + i)] >
         qp_upper_bound_[static_cast<Eigen::Index>(m_ + i)]) {
       throw_pretty("Inconsistent inequality bounds at row "
@@ -463,8 +443,6 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
     ok_init &= qp_solver_.data()->setLowerBound(qp_lower_bound_);
     ok_init &= qp_solver_.data()->setUpperBound(qp_upper_bound_);
     ok_init &= qp_solver_.initSolver();
-    std::cout << "OSQP solver initialization: "
-              << (ok_init ? "success" : "failure") << std::endl;
     osqp_initialized_ = ok_init;
     osqp_n_ = ok_init ? n_ : 0;
     osqp_m_ = ok_init ? (m_ + p_) : 0;
