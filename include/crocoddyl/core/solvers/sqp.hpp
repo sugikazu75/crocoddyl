@@ -64,7 +64,7 @@ class SolverSQPTpl : public SolverAbstractTpl<_Scalar> {
   void increaseRegularization() override;
   void decreaseRegularization() override;
 
-  void computeQuadraticModel();
+  virtual void computeQuadraticModel();
   virtual bool solveQuadraticModel();
   void extractQpDirection(const VectorXs& x);
 
