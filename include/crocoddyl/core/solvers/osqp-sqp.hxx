@@ -21,6 +21,7 @@ SolverOsqpSQPTpl<Scalar>::SolverOsqpSQPTpl(
       osqp_rho_(Scalar(0.1)),
       osqp_sigma_(Scalar(1e-6)),
       osqp_warm_start_(true),
+      osqp_settings_dirty_(true),
       osqp_initialized_(false),
       osqp_n_(0),
       osqp_m_(0) {}
@@ -36,6 +37,7 @@ SolverOsqpSQPTpl<Scalar>::SolverOsqpSQPTpl(
       osqp_rho_(other.osqp_rho_),
       osqp_sigma_(other.osqp_sigma_),
       osqp_warm_start_(other.osqp_warm_start_),
+      osqp_settings_dirty_(true),
       osqp_initialized_(false),
       osqp_n_(0),
       osqp_m_(0) {}
@@ -384,12 +386,12 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
     qp_upper_bound_.tail(static_cast<Eigen::Index>(p_)) = ub;
   }
 
-  const bool shape_changed =
-      !osqp_initialized_ || osqp_n_ != n_ || osqp_m_ != (m_ + p_);
-  auto initialize_solver = [&]() -> bool {
-    resetQpSolver();
-    qp_solver_.data()->clearHessianMatrix();
-    qp_solver_.data()->clearLinearConstraintsMatrix();
+  const bool size_changed = (osqp_n_ != n_ || osqp_m_ != (m_ + p_));
+  const bool need_initialize = !osqp_initialized_;
+
+  std::cout << "\n\n" << std::endl;
+
+  auto configure_solver_settings = [&]() {
     qp_solver_.settings()->setWarmStart(osqp_warm_start_);
     qp_solver_.settings()->setVerbosity(osqp_verbose_);
     qp_solver_.settings()->setMaxIteraction(std::max(1, osqp_max_iter_));
@@ -399,16 +401,31 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
         static_cast<double>(osqp_eps_rel_));
     qp_solver_.settings()->setRho(static_cast<double>(osqp_rho_));
     qp_solver_.settings()->setSigma(static_cast<double>(osqp_sigma_));
+  };
+
+  auto set_solver_problem_data = [&]() -> bool {
+    bool ok = true;
     qp_solver_.data()->setNumberOfVariables(static_cast<int>(n_));
     qp_solver_.data()->setNumberOfConstraints(static_cast<int>(m_ + p_));
+    ok &= qp_solver_.data()->setHessianMatrix(qp_hessian_sparse_);
+    ok &= qp_solver_.data()->setGradient(qp_gradient_);
+    ok &= qp_solver_.data()->setLinearConstraintsMatrix(qp_constraint_sparse_);
+    ok &= qp_solver_.data()->setLowerBound(qp_lower_bound_);
+    ok &= qp_solver_.data()->setUpperBound(qp_upper_bound_);
+    return ok;
+  };
+
+  auto initialize_solver = [&]() -> bool {
+    resetQpSolver();
+    if (osqp_settings_dirty_) {
+      configure_solver_settings();
+    }
     bool ok_init = true;
-    ok_init &= qp_solver_.data()->setHessianMatrix(qp_hessian_sparse_);
-    ok_init &= qp_solver_.data()->setGradient(qp_gradient_);
-    ok_init &=
-        qp_solver_.data()->setLinearConstraintsMatrix(qp_constraint_sparse_);
-    ok_init &= qp_solver_.data()->setLowerBound(qp_lower_bound_);
-    ok_init &= qp_solver_.data()->setUpperBound(qp_upper_bound_);
+    ok_init &= set_solver_problem_data();
     ok_init &= qp_solver_.initSolver();
+    if (ok_init) {
+      osqp_settings_dirty_ = false;
+    }
     osqp_initialized_ = ok_init;
     osqp_n_ = ok_init ? n_ : 0;
     osqp_m_ = ok_init ? (m_ + p_) : 0;
@@ -416,7 +433,10 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
   };
 
   bool ok = true;
-  if (shape_changed) {
+  if (need_initialize || size_changed) {
+    std::cout << "OSQP solver initialization required ("
+              << (need_initialize ? "not initialized" : "shape changed")
+              << "), rebuilding solver..." << std::endl;
     ok = initialize_solver();
   } else {
     ok &= qp_solver_.updateHessianMatrix(qp_hessian_sparse_);
@@ -424,20 +444,25 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
     ok &= qp_solver_.updateLinearConstraintsMatrix(qp_constraint_sparse_);
     ok &= qp_solver_.updateBounds(qp_lower_bound_, qp_upper_bound_);
     if (!ok) {
-      // Fallback: if incremental update fails, rebuild OSQP from scratch.
+      std::cout << "OSQP incremental update failed, rebuilding solver..."
+                << std::endl;
       ok = initialize_solver();
     }
   }
+  std::cout << "ok before first solve: " << ok << std::endl;
 
   ok &= qp_solver_.solve();
   if (!ok) {
-    // Second fallback: rebuild and solve once again when OSQP solve fails.
+    std::cout << "OSQP solve failed, rebuilding solver and retrying..."
+              << std::endl;
     if (!initialize_solver()) {
       resetQpSolver();
       return false;
     }
     ok = qp_solver_.solve();
     if (!ok) {
+      std::cout << "OSQP solve failed again after rebuilding, giving up."
+                << std::endl;
       resetQpSolver();
       return false;
     }
@@ -458,7 +483,6 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
 
 template <typename Scalar>
 void SolverOsqpSQPTpl<Scalar>::resetQpSolver() {
-  std::cout << "Resetting OSQP solver..." << std::endl;
   qp_solver_.clearSolver();
   qp_solver_.data()->clearHessianMatrix();
   qp_solver_.data()->clearLinearConstraintsMatrix();
@@ -505,6 +529,7 @@ bool SolverOsqpSQPTpl<Scalar>::get_osqp_warm_start() const {
 template <typename Scalar>
 void SolverOsqpSQPTpl<Scalar>::set_osqp_verbose(const bool v) {
   osqp_verbose_ = v;
+  osqp_settings_dirty_ = true;
   resetQpSolver();
 }
 
@@ -512,6 +537,7 @@ template <typename Scalar>
 void SolverOsqpSQPTpl<Scalar>::set_osqp_max_iter(const int v) {
   if (v <= 0) throw_pretty("osqp max_iter > 0.");
   osqp_max_iter_ = v;
+  osqp_settings_dirty_ = true;
   resetQpSolver();
 }
 
@@ -519,6 +545,7 @@ template <typename Scalar>
 void SolverOsqpSQPTpl<Scalar>::set_osqp_eps_abs(const Scalar v) {
   if (v <= Scalar(0.)) throw_pretty("osqp eps_abs > 0.");
   osqp_eps_abs_ = v;
+  osqp_settings_dirty_ = true;
   resetQpSolver();
 }
 
@@ -526,6 +553,7 @@ template <typename Scalar>
 void SolverOsqpSQPTpl<Scalar>::set_osqp_eps_rel(const Scalar v) {
   if (v <= Scalar(0.)) throw_pretty("osqp eps_rel > 0.");
   osqp_eps_rel_ = v;
+  osqp_settings_dirty_ = true;
   resetQpSolver();
 }
 
@@ -533,6 +561,7 @@ template <typename Scalar>
 void SolverOsqpSQPTpl<Scalar>::set_osqp_rho(const Scalar v) {
   if (v <= Scalar(0.)) throw_pretty("osqp rho > 0.");
   osqp_rho_ = v;
+  osqp_settings_dirty_ = true;
   resetQpSolver();
 }
 
@@ -540,12 +569,14 @@ template <typename Scalar>
 void SolverOsqpSQPTpl<Scalar>::set_osqp_sigma(const Scalar v) {
   if (v <= Scalar(0.)) throw_pretty("osqp sigma > 0.");
   osqp_sigma_ = v;
+  osqp_settings_dirty_ = true;
   resetQpSolver();
 }
 
 template <typename Scalar>
 void SolverOsqpSQPTpl<Scalar>::set_osqp_warm_start(const bool v) {
   osqp_warm_start_ = v;
+  osqp_settings_dirty_ = true;
   resetQpSolver();
 }
 

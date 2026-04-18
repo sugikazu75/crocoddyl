@@ -74,6 +74,7 @@ class SolverOsqpSQPTpl : public SolverSQPTpl<_Scalar> {
   Scalar osqp_rho_;
   Scalar osqp_sigma_;
   bool osqp_warm_start_;
+  bool osqp_settings_dirty_;
   bool osqp_initialized_;
   std::size_t osqp_n_;
   std::size_t osqp_m_;
