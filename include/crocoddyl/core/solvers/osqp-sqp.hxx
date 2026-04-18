@@ -243,14 +243,6 @@ void SolverOsqpSQPTpl<Scalar>::computeQuadraticModel() {
                                     h_lb_.segment(ineq_idx, ndx));
       model->get_state()->safe_diff(xs_[t], model->get_state()->get_ub(),
                                     h_.segment(ineq_idx, ndx));
-      for (std::size_t i = 0; i < ndx; ++i) {
-        if (std::isnan(static_cast<double>(h_lb_[ineq_idx + i]))) {
-          h_lb_[ineq_idx + i] = -static_cast<Scalar>(OsqpEigen::INFTY);
-        }
-        if (std::isnan(static_cast<double>(h_[ineq_idx + i]))) {
-          h_[ineq_idx + i] = static_cast<Scalar>(OsqpEigen::INFTY);
-        }
-      }
       ineq_idx += ndx;
     }
 
@@ -351,14 +343,7 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
   qp_hessian_sparse_ = P.template triangularView<Eigen::Upper>();
   qp_hessian_sparse_.makeCompressed();
 
-  qp_gradient_.resize(static_cast<Eigen::Index>(n_));
-  for (std::size_t i = 0; i < n_; ++i) {
-    const double ci = static_cast<double>(c_[i]);
-    if (!std::isfinite(ci)) {
-      throw_pretty("Invalid gradient entry c_ at index " << i);
-    }
-    qp_gradient_[static_cast<Eigen::Index>(i)] = ci;
-  }
+  qp_gradient_ = c_.template cast<double>();
 
   // Stack equality and inequality matrices:
   // A_osqp = [ Aeq ; G ],  l = [ b ; h_lb ],  u = [ b ; h_ub ].
@@ -381,41 +366,22 @@ bool SolverOsqpSQPTpl<Scalar>::solveQuadraticModel() {
 
   qp_lower_bound_.resize(static_cast<Eigen::Index>(m_ + p_));
   qp_upper_bound_.resize(static_cast<Eigen::Index>(m_ + p_));
-  for (std::size_t i = 0; i < m_; ++i) {
-    const Scalar bi_s = b_[i];
-    if (!std::isfinite(static_cast<double>(bi_s))) {
-      throw_pretty("Invalid equality bound b_ at row " << i);
-    }
-    const double bi = static_cast<double>(bi_s);
-    qp_lower_bound_[static_cast<Eigen::Index>(i)] = bi;
-    qp_upper_bound_[static_cast<Eigen::Index>(i)] = bi;
+  if (m_ > 0) {
+    qp_lower_bound_.head(static_cast<Eigen::Index>(m_)) =
+        b_.template cast<double>();
+    qp_upper_bound_.head(static_cast<Eigen::Index>(m_)) =
+        b_.template cast<double>();
   }
-  for (std::size_t i = 0; i < p_; ++i) {
-    const double lb = static_cast<double>(h_lb_[i]);
-    const double ub = static_cast<double>(h_[i]);
-    if (std::isnan(lb) || std::isnan(ub)) {
-      throw_pretty("Invalid inequality bound (NaN) at row " << i);
-    }
-    qp_lower_bound_[static_cast<Eigen::Index>(m_ + i)] =
-        (lb > static_cast<double>(OsqpEigen::INFTY))
-            ? static_cast<double>(OsqpEigen::INFTY)
-            : ((lb < -static_cast<double>(OsqpEigen::INFTY))
-                   ? -static_cast<double>(OsqpEigen::INFTY)
-                   : lb);
-    qp_upper_bound_[static_cast<Eigen::Index>(m_ + i)] =
-        (ub > static_cast<double>(OsqpEigen::INFTY))
-            ? static_cast<double>(OsqpEigen::INFTY)
-            : ((ub < -static_cast<double>(OsqpEigen::INFTY))
-                   ? -static_cast<double>(OsqpEigen::INFTY)
-                   : ub);
-    if (qp_lower_bound_[static_cast<Eigen::Index>(m_ + i)] >
-        qp_upper_bound_[static_cast<Eigen::Index>(m_ + i)]) {
-      throw_pretty("Inconsistent inequality bounds at row "
-                   << i << ": lower bound "
-                   << qp_lower_bound_[static_cast<Eigen::Index>(m_ + i)]
-                   << " > upper bound "
-                   << qp_upper_bound_[static_cast<Eigen::Index>(m_ + i)]);
-    }
+  if (p_ > 0) {
+    Eigen::VectorXd lb = h_lb_.template cast<double>();
+    Eigen::VectorXd ub = h_.template cast<double>();
+    const double osqp_inf = static_cast<double>(OsqpEigen::INFTY);
+    lb.array() = lb.array().isNaN().select(-osqp_inf, lb.array());
+    ub.array() = ub.array().isNaN().select(osqp_inf, ub.array());
+    lb.array() = lb.array().max(-osqp_inf).min(osqp_inf);
+    ub.array() = ub.array().max(-osqp_inf).min(osqp_inf);
+    qp_lower_bound_.tail(static_cast<Eigen::Index>(p_)) = lb;
+    qp_upper_bound_.tail(static_cast<Eigen::Index>(p_)) = ub;
   }
 
   const bool shape_changed =
