@@ -249,12 +249,12 @@ class ActuationModelFloatingBaseThrusterRatesTpl
   }
 
   void computeFExtByThrusts(const Eigen::Ref<const VectorXs>& u,
-                            pinocchio::container::aligned_vector<Force>& fext) {
+                            std::vector<Force>& fext) {
     for (auto& f : fext) f.setZero();
 
     for (size_t i = 0; i < n_thrusters_; i++) {
       pinocchio::JointIndex thruster_parent_joint_index =
-          state_->get_pinocchio()->frames[thrusters_[i].frame_id_].parent;
+          state_->get_pinocchio()->frames[thrusters_[i].frame_id_].parentJoint;
 
       fext.at(thruster_parent_joint_index) +=
           thrusters_[i].thrust_wrench_unit_parent_joint_ * u(i);
@@ -301,8 +301,8 @@ struct ActuationDataFloatingBaseThrusterRatesTpl
 
   virtual ~ActuationDataFloatingBaseThrusterRatesTpl() = default;
 
-  pinocchio::DataTpl<Scalar> pinocchio;              //!< Pinocchio data
-  pinocchio::container::aligned_vector<Force> fext;  //!< Per-joint ext. forces
+  pinocchio::DataTpl<Scalar> pinocchio;  //!< Pinocchio data
+  std::vector<Force> fext;               //!< Per-joint ext. forces
   MatrixXs W_thrust;  //!< Thrust-to-torque mapping W_f(q) [nv x nf]
   MatrixXs S;
 
