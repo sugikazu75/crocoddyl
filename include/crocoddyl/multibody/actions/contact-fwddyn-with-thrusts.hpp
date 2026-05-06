@@ -9,11 +9,17 @@
 #ifndef CROCODDYL_MULTIBODY_ACTIONS_CONTACT_FWDDYN_WITH_THRUSTS_HPP_
 #define CROCODDYL_MULTIBODY_ACTIONS_CONTACT_FWDDYN_WITH_THRUSTS_HPP_
 
+#include <algorithm>
+#include <iostream>
+#include <limits>
+#include <vector>
+
 #include "crocoddyl/core/action-base.hpp"
 #include "crocoddyl/core/actuation-base.hpp"
 #include "crocoddyl/core/constraints/constraint-manager.hpp"
 #include "crocoddyl/core/costs/cost-sum.hpp"
 #include "crocoddyl/core/diff-action-base.hpp"
+#include "crocoddyl/multibody/actuations/floating-base-thrust-rates.hpp"
 #include "crocoddyl/multibody/contacts/multiple-contacts.hpp"
 #include "crocoddyl/multibody/data/contacts.hpp"
 #include "crocoddyl/multibody/fwd.hpp"
