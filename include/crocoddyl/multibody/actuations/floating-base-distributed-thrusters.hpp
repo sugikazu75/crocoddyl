@@ -50,7 +50,8 @@ struct DistributedThrusterTpl {
     ReturnType ret(frame_id_, joint_M_thruster_.template cast<NewScalar>(),
                    scalar_cast<NewScalar>(ctorque_), direction_,
                    scalar_cast<NewScalar>(min_thrust_),
-                   scalar_cast<NewScalar>(max_thrust_));
+                   scalar_cast<NewScalar>(max_thrust_),
+                   scalar_cast<NewScalar>(delta_thrust_max_));
     return ret;
   }
 
