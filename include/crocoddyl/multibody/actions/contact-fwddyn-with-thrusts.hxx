@@ -83,8 +83,8 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::init() {
         << "Costs doesn't have the same control dimension (it should be " +
                std::to_string(nu_) + ")");
   }
-  Base::u_lb_ = actuation_->get_u_lb();
-  Base::u_ub_ = actuation_->get_u_ub();
+  Base::set_u_lb(actuation_->get_u_lb());
+  Base::set_u_ub(actuation_->get_u_ub());
   robot_only_costs_ = (costs_->get_state()->get_ndx() != state_->get_ndx());
   thrust_reg_weight_ = VectorXs::Zero(nf_);
   thrust_barrier_weight_ = VectorXs::Zero(nf_);
@@ -968,8 +968,8 @@ IntegratedActionModelEulerWithThrustsTpl<Scalar>::
       nf_(std::static_pointer_cast<StateMultibodyWithThrustsTpl<Scalar>>(
               model->get_state())
               ->get_nthrusters()) {
-  Base::u_lb_ = model->get_u_lb();
-  Base::u_ub_ = model->get_u_ub();
+  Base::set_u_lb(model->get_u_lb());
+  Base::set_u_ub(model->get_u_ub());
 }
 
 template <typename Scalar>
