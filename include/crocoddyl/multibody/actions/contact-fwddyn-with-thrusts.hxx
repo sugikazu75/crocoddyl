@@ -532,6 +532,13 @@ DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::cast() const {
         std::make_shared<ConstraintType>(
             constraints_->template cast<NewScalar>()),
         scalar_cast<NewScalar>(JMinvJt_damping_), enable_force_);
+    if (!with_armature_) {
+      ret.set_armature(armature_.template cast<NewScalar>());
+    }
+    ret.set_thrust_reg_weight(thrust_reg_weight_.template cast<NewScalar>());
+    ret.set_thrust_barrier(thrust_barrier_weight_.template cast<NewScalar>(),
+                           thrust_lb_.template cast<NewScalar>(),
+                           thrust_ub_.template cast<NewScalar>());
     return ret;
   } else {
     ReturnType ret(
@@ -540,6 +547,13 @@ DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::cast() const {
         std::make_shared<ContactType>(contacts_->template cast<NewScalar>()),
         std::make_shared<CostType>(costs_->template cast<NewScalar>()),
         scalar_cast<NewScalar>(JMinvJt_damping_), enable_force_);
+    if (!with_armature_) {
+      ret.set_armature(armature_.template cast<NewScalar>());
+    }
+    ret.set_thrust_reg_weight(thrust_reg_weight_.template cast<NewScalar>());
+    ret.set_thrust_barrier(thrust_barrier_weight_.template cast<NewScalar>(),
+                           thrust_lb_.template cast<NewScalar>(),
+                           thrust_ub_.template cast<NewScalar>());
     return ret;
   }
 }

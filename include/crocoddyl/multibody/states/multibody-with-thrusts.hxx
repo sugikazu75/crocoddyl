@@ -317,6 +317,8 @@ StateMultibodyWithThrustsTpl<Scalar>::cast() const {
   ReturnType ret(
       std::make_shared<StateType>(state_->template cast<NewScalar>()),
       n_thrusters_);
+  ret.set_lb(lb_.template cast<NewScalar>());
+  ret.set_ub(ub_.template cast<NewScalar>());
   return ret;
 }
 
