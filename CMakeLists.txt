@@ -162,7 +162,7 @@ if(BUILD_WITH_ODYN)
 endif()
 
 if(BUILD_WITH_HPIPM)
-  find_package(hpipm-cpp QUIET CONFIG)
+  add_project_dependency(hpipm-cpp QUIET CONFIG)
 endif()
 
 if(BUILD_WITH_IPOPT)
