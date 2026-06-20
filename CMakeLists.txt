@@ -100,6 +100,7 @@ option(ENABLE_VECTORIZATION
 option(BUILD_BENCHMARK "Build the benchmark" ON)
 option(BUILD_EXAMPLES "Build the examples" ON)
 option(BUILD_WITH_ODYN "Build the ODYN wrapper." ON)
+option(BUILD_WITH_OSQP "Build the OSQP SQP wrapper." ON)
 option(BUILD_WITH_IPOPT "Build the IPOPT wrapper." ON)
 option(GENERATE_PYTHON_STUBS
        "Generate the Python stubs associated to the Python library" OFF)
@@ -158,6 +159,10 @@ endif()
 
 if(BUILD_WITH_ODYN)
   add_project_dependency(odyn 0.7.0 PKG_CONFIG_REQUIRES "odyn >= 0.7.0")
+endif()
+
+if(BUILD_WITH_OSQP)
+  find_package(OsqpEigen QUIET)
 endif()
 
 if(BUILD_WITH_IPOPT)
@@ -238,6 +243,13 @@ if(BUILD_WITH_ODYN AND odyn_FOUND)
   set(PACKAGE_EXTRA_MACROS
       "${PACKAGE_EXTRA_MACROS}\nADD_DEFINITIONS(-DCROCODDYL_WITH_ODYN)")
   link_directories(${odyn_LIBRARY_DIRS})
+endif()
+
+# Add OSQP (via OsqpEigen)
+if(BUILD_WITH_OSQP AND OsqpEigen_FOUND)
+  add_definitions(-DCROCODDYL_WITH_OSQP)
+  set(PACKAGE_EXTRA_MACROS
+      "${PACKAGE_EXTRA_MACROS}\nADD_DEFINITIONS(-DCROCODDYL_WITH_OSQP)")
 endif()
 
 # Add Ipopt
@@ -335,6 +347,9 @@ if(UNIX AND NOT BUILD_STANDALONE_PYTHON_INTERFACE)
   endif()
   target_link_libraries(${PROJECT_NAME} pinocchio::pinocchio)
   target_link_libraries(${PROJECT_NAME} Boost::filesystem Boost::serialization)
+  if(BUILD_WITH_OSQP AND OsqpEigen_FOUND)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${OsqpEigen_INCLUDE_DIRS})
+  endif()
   target_compile_definitions(
     ${PROJECT_NAME} PUBLIC PINOCCHIO_ENABLE_COMPATIBILITY_WITH_VERSION_2)
   set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${PROJECT_VERSION})
@@ -351,6 +366,10 @@ if(UNIX AND NOT BUILD_STANDALONE_PYTHON_INTERFACE)
 
   if(BUILD_WITH_ODYN AND ODYN_FOUND)
     target_link_libraries(${PROJECT_NAME} odyn::odyn)
+  endif()
+
+  if(BUILD_WITH_OSQP AND OsqpEigen_FOUND)
+    target_link_libraries(${PROJECT_NAME} ${OsqpEigen_LIBRARIES})
   endif()
 
   if(BUILD_WITH_IPOPT AND IPOPT_FOUND)
