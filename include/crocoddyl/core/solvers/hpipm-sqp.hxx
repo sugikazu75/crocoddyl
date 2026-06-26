@@ -262,13 +262,17 @@ void SolverHpipmSQPTpl<Scalar>::computeQuadraticModel() {
         qp.R.diagonal().array() += reg;
       }
 
-      // Control bounds: lbu <= du <= ubu
+      // Control bounds: lbu <= du <= ubu, only for the finitely-bounded
+      // controls listed in qp.idxbu (filled in allocateData). Unbounded
+      // controls must NOT be passed as box constraints: feeding HPIPM dummy
+      // +/-1e30 bounds creates ill-scaled slacks/barriers that wreck the IPM.
       const VectorXs& u_lb = model->get_u_lb();
       const VectorXs& u_ub = model->get_u_ub();
-      for (std::size_t i = 0; i < nu; ++i) {
-        qp.lbu[i] =
+      for (std::size_t k = 0; k < qp.idxbu.size(); ++k) {
+        const std::size_t i = static_cast<std::size_t>(qp.idxbu[k]);
+        qp.lbu[k] =
             (u_lb[i] > -inf) ? static_cast<double>(u_lb[i] - us_[t][i]) : -1e30;
-        qp.ubu[i] =
+        qp.ubu[k] =
             (u_ub[i] < inf) ? static_cast<double>(u_ub[i] - us_[t][i]) : 1e30;
       }
     }
@@ -393,6 +397,7 @@ template <typename Scalar>
 void SolverHpipmSQPTpl<Scalar>::allocateData() {
   const std::size_t T = problem_->get_T();
   const std::size_t ndx = problem_->get_ndx();
+  const Scalar inf = std::numeric_limits<Scalar>::infinity();
 
   Lxx_dx_.resize(T + 1);
   Luu_du_.resize(T);
@@ -425,11 +430,21 @@ void SolverHpipmSQPTpl<Scalar>::allocateData() {
       qp.r = Eigen::VectorXd::Zero(nu);  // sets nu[t] = nu via r.size()
       qp.B = Eigen::MatrixXd::Zero(ndx, nu);
 
-      // Control bounds: always include all nu controls
-      qp.idxbu.resize(nu);
-      std::iota(qp.idxbu.begin(), qp.idxbu.end(), 0);
-      qp.lbu = Eigen::VectorXd::Constant(nu, -1e30);
-      qp.ubu = Eigen::VectorXd::Constant(nu, 1e30);
+      // Control bounds: only register controls with at least one finite bound.
+      // Unbounded controls (e.g. accelerations/forces in inverse dynamics) are
+      // left out of idxbu, so HPIPM sees a pure equality-constrained QP instead
+      // of nu dummy +/-1e30 box constraints that destroy the IPM conditioning.
+      const VectorXs& u_lb = model->get_u_lb();
+      const VectorXs& u_ub = model->get_u_ub();
+      qp.idxbu.clear();
+      for (std::size_t i = 0; i < nu; ++i) {
+        if (u_lb[i] > -inf || u_ub[i] < inf) {
+          qp.idxbu.push_back(static_cast<int>(i));
+        }
+      }
+      const std::size_t nbu = qp.idxbu.size();
+      qp.lbu = Eigen::VectorXd::Constant(nbu, -1e30);
+      qp.ubu = Eigen::VectorXd::Constant(nbu, 1e30);
     } else {
       // nu = 0: sets nu[t] = 0 via r.size() = 0
       qp.R = Eigen::MatrixXd::Zero(0, 0);
