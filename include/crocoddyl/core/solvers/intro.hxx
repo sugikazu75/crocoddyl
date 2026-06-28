@@ -237,21 +237,32 @@ void SolverIntroTpl<Scalar>::calcLuNullDir() {
     const std::shared_ptr<ActionDataAbstract>& data = datas[t];
     if (model->get_nu() > 0 && model->get_nh() > 0) {
       Hu_lu_[t].compute(data->Hu);
-      Hu_rank_[t] = Hu_lu_[t].rank();
-      YZ_[t].leftCols(Hu_rank_[t]).noalias() =
-          (Hu_lu_[t].permutationP() * data->Hu).transpose();
-      YZ_[t].rightCols(model->get_nu() - Hu_rank_[t]) = Hu_lu_[t].kernel();
-      const Eigen::Block<MatrixXs, Eigen::Dynamic, Eigen::Dynamic,
-                         Eigen::RowMajor>
-          Y = YZ_[t].leftCols(Hu_lu_[t].rank());
-      Hy_[t].noalias() = data->Hu * Y;
-      Hy_lu_[t].compute(Hy_[t]);
-      const Eigen::Inverse<Eigen::PartialPivLU<MatrixXs> > Hy_inv =
-          Hy_lu_[t].inverse();
-      ks_[t].noalias() = Hy_inv * data->h;
-      Ks_[t].noalias() = Hy_inv * data->Hx;
-      kz_[t].noalias() = Y * ks_[t];
-      Kz_[t].noalias() = Y * Ks_[t];
+      const std::size_t rank = Hu_lu_[t].rank();
+      Hu_rank_[t] = rank;
+      if (rank > 0) {
+        Eigen::MatrixXd Hu_perm = Hu_lu_[t].permutationP() * data->Hu;
+        Eigen::MatrixXd Hu_indep = Hu_perm.topRows(rank);
+
+        YZ_[t].leftCols(rank).noalias() = Hu_indep.transpose();
+        YZ_[t].rightCols(model->get_nu() - rank) = Hu_lu_[t].kernel();
+
+        const auto Y = YZ_[t].leftCols(rank);
+
+        Hy_[t].topLeftCorner(rank, rank).noalias() = Hu_indep * Y;
+        Hy_lu_[t].compute(Hy_[t].topLeftCorner(rank, rank));
+
+        Eigen::VectorXd h_perm = Hu_lu_[t].permutationP() * data->h;
+        Eigen::MatrixXd Hx_perm = Hu_lu_[t].permutationP() * data->Hx;
+
+        ks_[t].head(rank) = Hy_lu_[t].solve(h_perm.head(rank));
+        Ks_[t].topRows(rank) = Hy_lu_[t].solve(Hx_perm.topRows(rank));
+
+        kz_[t].noalias() = Y * ks_[t].head(rank);
+        Kz_[t].noalias() = Y * Ks_[t].topRows(rank);
+      } else {
+        kz_[t].setZero();
+        Kz_[t].setZero();
+      }
     }
   }
   STOP_PROFILER("SolverIntro::calcLuNullDir");
