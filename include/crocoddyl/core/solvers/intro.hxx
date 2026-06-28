@@ -240,8 +240,8 @@ void SolverIntroTpl<Scalar>::calcLuNullDir() {
       const std::size_t rank = Hu_lu_[t].rank();
       Hu_rank_[t] = rank;
       if (rank > 0) {
-        Eigen::MatrixXd Hu_perm = Hu_lu_[t].permutationP() * data->Hu;
-        Eigen::MatrixXd Hu_indep = Hu_perm.topRows(rank);
+        MatrixXs Hu_perm = Hu_lu_[t].permutationP() * data->Hu;
+        MatrixXs Hu_indep = Hu_perm.topRows(rank);
 
         YZ_[t].leftCols(rank).noalias() = Hu_indep.transpose();
         YZ_[t].rightCols(model->get_nu() - rank) = Hu_lu_[t].kernel();
@@ -251,8 +251,8 @@ void SolverIntroTpl<Scalar>::calcLuNullDir() {
         Hy_[t].topLeftCorner(rank, rank).noalias() = Hu_indep * Y;
         Hy_lu_[t].compute(Hy_[t].topLeftCorner(rank, rank));
 
-        Eigen::VectorXd h_perm = Hu_lu_[t].permutationP() * data->h;
-        Eigen::MatrixXd Hx_perm = Hu_lu_[t].permutationP() * data->Hx;
+        VectorXs h_perm = Hu_lu_[t].permutationP() * data->h;
+        MatrixXs Hx_perm = Hu_lu_[t].permutationP() * data->Hx;
 
         ks_[t].head(rank) = Hy_lu_[t].solve(h_perm.head(rank));
         Ks_[t].topRows(rank) = Hy_lu_[t].solve(Hx_perm.topRows(rank));
