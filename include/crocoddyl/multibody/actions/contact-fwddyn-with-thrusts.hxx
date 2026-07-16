@@ -169,7 +169,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
 
   if (constraints_ != nullptr) {
     d->constraints->resize(this, d);
-    constraints_->calc(d->constraints, x, u);
+    constraints_->calc(d->constraints, x.head(nq + nv), u);
   }
 }
 
@@ -211,7 +211,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
 
   if (constraints_ != nullptr) {
     d->constraints->resize(this, d, false);
-    constraints_->calc(d->constraints, x);
+    constraints_->calc(d->constraints, x.head(nq + nv));
   }
 }
 
@@ -367,7 +367,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
   }
 
   if (constraints_ != nullptr) {
-    constraints_->calcDiff(d->constraints, x, u);
+    constraints_->calcDiff(d->constraints, x.head(nq + nv), u);
   }
 }
 
@@ -380,10 +380,11 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
         "Invalid argument: " << "x has wrong dimension (it should be " +
                                     std::to_string(state_->get_nx()) + ")");
   }
+  const std::size_t nq = state_->get_nq();
+  const std::size_t nv = state_->get_nv();
+
   Data* d = static_cast<Data*>(data.get());
   if (robot_only_costs_) {
-    const std::size_t nq = state_->get_nq();
-    const std::size_t nv = state_->get_nv();
     costs_->calcDiff(d->costs, x.head(nq + nv));
     const std::size_t robot_ndx = costs_->get_state()->get_ndx();
     d->Lx.head(robot_ndx) = d->costs->Lx;
@@ -443,7 +444,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
     }
   }
   if (constraints_ != nullptr) {
-    constraints_->calcDiff(d->constraints, x);
+    constraints_->calcDiff(d->constraints, x.head(nq + nv));
   }
 }
 
