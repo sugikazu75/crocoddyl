@@ -162,15 +162,14 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
 
     computeFExtByThrusts(u, d->fext);
 
-    pinocchio::computeRNEADerivatives(
-        *(zero_gravity_model_), d->pinocchio, q,
-        Eigen::VectorBlock<const Eigen::Ref<const VectorXs>,
-                           Eigen::Dynamic>::Zero(state_->get_nv()),
-        Eigen::VectorBlock<const Eigen::Ref<const VectorXs>,
-                           Eigen::Dynamic>::Zero(state_->get_nv()),
-        d->fext);
+    d->static_torque_partial_dq.setZero();
 
-    data->dtau_dx.leftCols(state_->get_nv()).noalias() = -d->pinocchio.dtau_dq;
+    pinocchio::computeStaticTorqueDerivatives(*(zero_gravity_model_),
+                                              d->pinocchio, q, d->fext,
+                                              d->static_torque_partial_dq);
+
+    data->dtau_dx.leftCols(state_->get_nv()).noalias() =
+        -d->static_torque_partial_dq;
     data->dtau_dx.rightCols(state_->get_nv()).setZero();
   }
 
@@ -310,6 +309,8 @@ struct ActuationDataFloatingBaseDistributedThrustersTpl
     pinocchio = pinocchio::DataTpl<Scalar>(*(state->get_pinocchio()));
     fext.resize(state->get_pinocchio()->njoints, Force::Zero());
     W_thrust = MatrixXs::Zero(model->get_state()->get_nv(), model->get_nu());
+    static_torque_partial_dq = MatrixXs::Zero(model->get_state()->get_nv(),
+                                              model->get_state()->get_nv());
     S = MatrixXs::Zero(model->get_state()->get_nv(),
                        model->get_state()->get_nv());
   }
@@ -317,6 +318,7 @@ struct ActuationDataFloatingBaseDistributedThrustersTpl
   pinocchio::DataTpl<Scalar> pinocchio;  //!< Pinocchio data
   std::vector<Force> fext;
   MatrixXs W_thrust;
+  MatrixXs static_torque_partial_dq;
   MatrixXs S;
 
   using Base::dtau_du;
