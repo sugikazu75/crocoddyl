@@ -357,6 +357,10 @@ class IntegratedActionModelEulerWithThrustsTpl
   const std::shared_ptr<DifferentialModel>& get_differential() const;
   Scalar get_dt() const;
   void set_dt(const Scalar dt);
+  virtual std::size_t get_ng() const override;
+  virtual std::size_t get_nh() const override;
+  virtual std::size_t get_ng_T() const override;
+  virtual std::size_t get_nh_T() const override;
 
   virtual void print(std::ostream& os) const override;
 

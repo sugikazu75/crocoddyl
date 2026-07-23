@@ -368,6 +368,8 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
 
   if (constraints_ != nullptr) {
     constraints_->calcDiff(d->constraints, x.head(nq + nv), u);
+    d->Gx.rightCols(nf_).setZero();
+    d->Hx.rightCols(nf_).setZero();
   }
 }
 
@@ -445,6 +447,8 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
   }
   if (constraints_ != nullptr) {
     constraints_->calcDiff(d->constraints, x.head(nq + nv));
+    d->Gx.rightCols(nf_).setZero();
+    d->Hx.rightCols(nf_).setZero();
   }
 }
 
@@ -975,7 +979,9 @@ template <typename Scalar>
 IntegratedActionModelEulerWithThrustsTpl<Scalar>::
     IntegratedActionModelEulerWithThrustsTpl(
         std::shared_ptr<DifferentialModel> model, const Scalar time_step)
-    : Base(model->get_state(), model->get_nu()),
+    : Base(model->get_state(), model->get_nu(), model->get_nr(),
+           model->get_ng(), model->get_nh(), model->get_ng_T(),
+           model->get_nh_T()),
       differential_(model),
       dt_(time_step),
       dt2_(time_step * time_step),
@@ -1018,6 +1024,8 @@ void IntegratedActionModelEulerWithThrustsTpl<Scalar>::calc(
 
   state_->integrate(x, d->dx, d->xnext);
   d->cost = dt_ * d->differential->cost;
+  d->g = d->differential->g;
+  d->h = d->differential->h;
 }
 
 template <typename Scalar>
@@ -1035,6 +1043,8 @@ void IntegratedActionModelEulerWithThrustsTpl<Scalar>::calc(
   d->dx.setZero();
   d->xnext = x;
   d->cost = d->differential->cost;
+  d->g = d->differential->g;
+  d->h = d->differential->h;
 }
 
 template <typename Scalar>
@@ -1081,6 +1091,10 @@ void IntegratedActionModelEulerWithThrustsTpl<Scalar>::calcDiff(
   d->Lxx.noalias() = dt_ * d->differential->Lxx;
   d->Lxu.noalias() = dt_ * d->differential->Lxu;
   d->Luu.noalias() = dt_ * d->differential->Luu;
+  d->Gx = d->differential->Gx;
+  d->Hx = d->differential->Hx;
+  d->Gu = d->differential->Gu;
+  d->Hu = d->differential->Hu;
 }
 
 template <typename Scalar>
@@ -1098,6 +1112,8 @@ void IntegratedActionModelEulerWithThrustsTpl<Scalar>::calcDiff(
   d->Fx = d->Fx_tmp;
   d->Lx = d->differential->Lx;
   d->Lxx = d->differential->Lxx;
+  d->Gx = d->differential->Gx;
+  d->Hx = d->differential->Hx;
 }
 
 template <typename Scalar>
@@ -1150,6 +1166,26 @@ template <typename Scalar>
 void IntegratedActionModelEulerWithThrustsTpl<Scalar>::set_dt(const Scalar dt) {
   dt_ = dt;
   dt2_ = dt * dt;
+}
+
+template <typename Scalar>
+std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_ng() const {
+  return differential_->get_ng();
+}
+
+template <typename Scalar>
+std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_nh() const {
+  return differential_->get_nh();
+}
+
+template <typename Scalar>
+std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_ng_T() const {
+  return differential_->get_ng_T();
+}
+
+template <typename Scalar>
+std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_nh_T() const {
+  return differential_->get_nh_T();
 }
 
 template <typename Scalar>
