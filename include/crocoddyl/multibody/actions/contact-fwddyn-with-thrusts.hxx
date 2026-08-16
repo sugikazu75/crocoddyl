@@ -794,8 +794,8 @@ DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
   VectorXs fixed = VectorXs::Zero(nz);
   VectorXs mu = VectorXs::Zero(nv);
   std::vector<int> active_bound(nz, 0);  // -1: lower, +1: upper, 0: free
-  const Scalar bound_tol = Scalar(1e-9);
-  const Scalar eq_tol = Scalar(1e-8);
+  const Scalar bound_tol = ScaleNumerics<Scalar>(1e-9);
+  const Scalar eq_tol = ScaleNumerics<Scalar>(1e-8);
   bool converged = false;
 
   for (std::size_t iter = 0; iter <= 4 * nz + 10; ++iter) {
