@@ -142,9 +142,6 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
 
     Data* d = static_cast<Data*>(data.get());
 
-    pinocchio::framesForwardKinematics(*(state_->get_pinocchio()), d->pinocchio,
-                                       q);
-
     updateWThrust(d, q);
 
     data->dtau_du = d->W_thrust;
@@ -230,17 +227,13 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
 
  private:
   void updateWThrust(Data* d, const Eigen::Ref<const VectorXs>& q) {
-    pinocchio::framesForwardKinematics(*(state_->get_pinocchio()), d->pinocchio,
-                                       q);
-
     for (size_t i = 0; i < n_thrusters_; ++i) {
-      // Compute the thruster Jacobian
-      MatrixXs thrust_jacobian = MatrixXs::Zero(6, state_->get_nv());
+      d->tmp_thrust_jacobian.setZero();
       pinocchio::computeFrameJacobian(*(state_->get_pinocchio()), d->pinocchio,
                                       q, thrusters_.at(i).frame_id_,
-                                      pinocchio::LOCAL, thrust_jacobian);
+                                      pinocchio::LOCAL, d->tmp_thrust_jacobian);
 
-      d->W_thrust.col(i) = thrust_jacobian.transpose() *
+      d->W_thrust.col(i) = d->tmp_thrust_jacobian.transpose() *
                            thrusters_.at(i).thrust_wrench_unit_.toVector();
     }
   }
@@ -249,7 +242,6 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
                             std::vector<Force>& fext) {
     for (auto& f : fext) f.setZero();
 
-    // calculate the effect of thrusters on the system
     for (size_t i = 0; i < n_thrusters_; i++) {
       pinocchio::JointIndex thruster_parent_joint_index =
           state_->get_pinocchio()->frames[thrusters_[i].frame_id_].parentJoint;
@@ -310,6 +302,7 @@ struct ActuationDataFloatingBaseDistributedThrustersTpl
     pinocchio = pinocchio::DataTpl<Scalar>(*(state->get_pinocchio()));
     fext.resize(state->get_pinocchio()->njoints, Force::Zero());
     W_thrust = MatrixXs::Zero(model->get_state()->get_nv(), model->get_nu());
+    tmp_thrust_jacobian = MatrixXs::Zero(6, model->get_state()->get_nv());
     static_torque_partial_dq = MatrixXs::Zero(model->get_state()->get_nv(),
                                               model->get_state()->get_nv());
     S = MatrixXs::Zero(model->get_state()->get_nv(),
@@ -319,6 +312,7 @@ struct ActuationDataFloatingBaseDistributedThrustersTpl
   pinocchio::DataTpl<Scalar> pinocchio;  //!< Pinocchio data
   std::vector<Force> fext;
   MatrixXs W_thrust;
+  MatrixXs tmp_thrust_jacobian;
   MatrixXs static_torque_partial_dq;
   MatrixXs S;
 

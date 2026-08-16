@@ -124,8 +124,6 @@ class ActuationModelFloatingBaseThrusterRatesTpl
 
     Data* d = static_cast<Data*>(data.get());
 
-    pinocchio::framesForwardKinematics(*(state_->get_pinocchio()), d->pinocchio,
-                                       q);
     updateWThrust(d, q);
 
     const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic>
@@ -233,16 +231,13 @@ class ActuationModelFloatingBaseThrusterRatesTpl
 
  private:
   void updateWThrust(Data* d, const Eigen::Ref<const VectorXs>& q) {
-    pinocchio::framesForwardKinematics(*(state_->get_pinocchio()), d->pinocchio,
-                                       q);
-
     for (size_t i = 0; i < n_thrusters_; ++i) {
-      MatrixXs thrust_jacobian = MatrixXs::Zero(6, state_->get_nv());
+      d->tmp_thrust_jacobian.setZero();
       pinocchio::computeFrameJacobian(*(state_->get_pinocchio()), d->pinocchio,
                                       q, thrusters_.at(i).frame_id_,
-                                      pinocchio::LOCAL, thrust_jacobian);
+                                      pinocchio::LOCAL, d->tmp_thrust_jacobian);
 
-      d->W_thrust.col(i) = thrust_jacobian.transpose() *
+      d->W_thrust.col(i) = d->tmp_thrust_jacobian.transpose() *
                            thrusters_.at(i).thrust_wrench_unit_.toVector();
     }
   }
@@ -295,6 +290,7 @@ struct ActuationDataFloatingBaseThrusterRatesTpl
     pinocchio = pinocchio::DataTpl<Scalar>(*(state->get_pinocchio()));
     fext.resize(state->get_pinocchio()->njoints, Force::Zero());
     W_thrust = MatrixXs::Zero(state->get_nv(), model->get_nu());
+    tmp_thrust_jacobian = MatrixXs::Zero(6, state->get_nv());
     static_torque_partial_dq = MatrixXs::Zero(state->get_nv(), state->get_nv());
     S = MatrixXs::Zero(state->get_nv(), state->get_nv());
   }
@@ -304,6 +300,7 @@ struct ActuationDataFloatingBaseThrusterRatesTpl
   pinocchio::DataTpl<Scalar> pinocchio;  //!< Pinocchio data
   std::vector<Force> fext;               //!< Per-joint ext. forces
   MatrixXs W_thrust;  //!< Thrust-to-torque mapping W_f(q) [nv x nf]
+  MatrixXs tmp_thrust_jacobian;
   MatrixXs static_torque_partial_dq;
   MatrixXs S;
 
