@@ -247,14 +247,15 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
 
   void computeFExtByThrusts(const Eigen::Ref<const VectorXs>& u,
                             std::vector<Force>& fext) {
+    for (auto& f : fext) f.setZero();
+
     // calculate the effect of thrusters on the system
     for (size_t i = 0; i < n_thrusters_; i++) {
       pinocchio::JointIndex thruster_parent_joint_index =
           state_->get_pinocchio()->frames[thrusters_[i].frame_id_].parentJoint;
 
-      fext.at(thruster_parent_joint_index) =
-          thrusters_[i].thrust_wrench_unit_parent_joint_ *
-          u(i);  // TODO: We now assume only one thruster per joint
+      fext.at(thruster_parent_joint_index) +=
+          thrusters_[i].thrust_wrench_unit_parent_joint_ * u(i);
     }
   }
 
