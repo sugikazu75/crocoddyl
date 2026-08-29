@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // BSD 3-Clause License
 //
-// Copyright (C) 2019-2025, LAAS-CNRS, University of Edinburgh,
+// Copyright (C) 2019-2026, LAAS-CNRS, University of Edinburgh,
 //                          Heriot-Watt University, University of Trento
 // Copyright note valid unless otherwise stated in individual files.
 // All rights reserved.
@@ -26,6 +26,11 @@ void exposeActionCodeGen();
 void exposeDifferentialActionAbstract();
 void exposeIntegratedActionAbstract();
 void exposeResidualAbstract();
+void exposeTaskAbstract();
+void exposeGuidanceAbstract();
+void exposeGuidanceLinear();
+void exposeGuidanceSmoothSaturation();
+void exposeGuidanceComponentwiseSaturation();
 void exposeActivationAbstract();
 void exposeSquashingAbstract();
 void exposeSquashingSmoothSat();
@@ -38,6 +43,8 @@ void exposeCostAbstract();
 void exposeResidualControl();
 void exposeResidualJointEffort();
 void exposeResidualJointAcceleration();
+void exposeResidualTaskFirstOrder();
+void exposeResidualTaskSecondOrder();
 void exposeCostSum();
 void exposeCostResidual();
 void exposeConstraintAbstract();
@@ -63,6 +70,7 @@ void exposeActivationWeightedQuad();
 void exposeActivationQuadraticBarrier();
 void exposeActivationWeightedQuadraticBarrier();
 void exposeActivationSmooth1Norm();
+void exposeActivationWeightedSmooth1Norm();
 void exposeActivationSmooth2Norm();
 void exposeActivation2NormBarrier();
 void exposeSolverDDP();

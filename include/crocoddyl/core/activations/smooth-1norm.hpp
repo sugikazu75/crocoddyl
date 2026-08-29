@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // BSD 3-Clause License
 //
-// Copyright (C) 2019-2025, LAAS-CNRS, University of Edinburgh,
+// Copyright (C) 2019-2026, LAAS-CNRS, University of Edinburgh,
 //                          Heriot-Watt University
 // Copyright note valid unless otherwise stated in individual files.
 // All rights reserved.
@@ -18,15 +18,23 @@ namespace crocoddyl {
 /**
  * @brief Smooth-abs activation
  *
- * This activation function describes a smooth representation of an absolute
- * activation (1-norm) for each element of a residual vector, i.e. \f[
- * \begin{equation} sum^nr_{i=0} \sqrt{\epsilon + \|r_i\|^2} \end{equation} \f]
- * where \f$\epsilon\f$ defines the smoothing factor, \f$r_i\f$ is the scalar
- * residual for the \f$i\f$ constraints, \f$nr\f$ is the dimension of the
- * residual vector.
+ * This activation function describes a smooth representation of the 1-norm of
+ * a residual vector:
+ * \f[
+ *   a(\mathbf{r}) =
+ *     \sum_{i=0}^{nr-1}
+ *       \delta^2\left(\sqrt{1 + (r_i/\delta)^2} - 1\right).
+ * \f]
+ * Here, \f$\delta > 0\f$ is the smoothing scale, \f$r_i\f$ is a scalar
+ * residual, and \f$nr\f$ is the residual dimension. This is the classical
+ * pseudo-Huber form, equivalently
+ * \f$\delta\sqrt{\delta^2 + r_i^2} - \delta^2\f$. Its local quadratic
+ * approximation is \f$r_i^2/2\f$ for every \f$\delta\f$. The transition to the
+ * linear regime occurs around \f$|r_i| = \delta\f$, with asymptotic slope
+ * \f$\delta\f$.
  *
- * The computation of the function and it derivatives are carried out in
- * `calc()` and `caldDiff()`, respectively.
+ * The computation of the function and its derivatives are carried out in
+ * `calc()` and `calcDiff()`, respectively.
  *
  * \sa `calc()`, `calcDiff()`, `createData()`
  */
@@ -48,21 +56,17 @@ class ActivationModelSmooth1NormTpl
   /**
    * @brief Initialize the smooth-abs activation model
    *
-   * The default `eps` value is defined as 1.
+   * The default `delta` value is defined as 1.
    *
-   * @param[in] nr   Dimension of the residual vector
-   * @param[in] eps  Smoothing factor (default: 1.)
+   * @param[in] nr     Dimension of the residual vector
+   * @param[in] delta  Strictly positive smoothing scale (default: 1)
    */
   explicit ActivationModelSmooth1NormTpl(const std::size_t nr,
-                                         const Scalar eps = Scalar(1.))
-      : Base(nr), eps_(eps) {
-    if (eps < Scalar(0.)) {
-      throw_pretty("Invalid argument: " << "eps should be a positive value");
-    }
-    if (eps == Scalar(0.)) {
-      std::cerr << "Warning: eps=0 leads to derivatives discontinuities in the "
-                   "origin, it becomes the absolute function"
-                << std::endl;
+                                         const Scalar delta = Scalar(1.))
+      : Base(nr), delta_(delta) {
+    if (delta_ <= Scalar(0.)) {
+      throw_pretty(
+          "Invalid argument: delta should be a strictly positive value");
     }
   };
   virtual ~ActivationModelSmooth1NormTpl() = default;
@@ -82,8 +86,9 @@ class ActivationModelSmooth1NormTpl
     }
     std::shared_ptr<Data> d = std::static_pointer_cast<Data>(data);
 
-    d->a = (r.array().cwiseAbs2().array() + eps_).array().cwiseSqrt();
-    data->a_value = d->a.sum();
+    d->a = (r.array().square() + delta_ * delta_).sqrt().matrix();
+    data->a_value =
+        delta_ * (r.array().square() / (d->a.array() + delta_)).sum();
   };
 
   /**
@@ -101,9 +106,11 @@ class ActivationModelSmooth1NormTpl
     }
 
     std::shared_ptr<Data> d = std::static_pointer_cast<Data>(data);
-    data->Ar = r.cwiseProduct(d->a.cwiseInverse());
-    data->Arr.diagonal() =
-        d->a.cwiseProduct(d->a).cwiseProduct(d->a).cwiseInverse();
+    const VectorXs a_inv = d->a.cwiseInverse();
+
+    data->Ar = delta_ * r.cwiseProduct(a_inv);
+    data->Arr.diagonal() = delta_ * delta_ * delta_ *
+                           a_inv.cwiseProduct(a_inv).cwiseProduct(a_inv);
   };
 
   /**
@@ -118,9 +125,11 @@ class ActivationModelSmooth1NormTpl
   template <typename NewScalar>
   ActivationModelSmooth1NormTpl<NewScalar> cast() const {
     typedef ActivationModelSmooth1NormTpl<NewScalar> ReturnType;
-    ReturnType res(nr_, scalar_cast<NewScalar>(eps_));
+    ReturnType res(nr_, scalar_cast<NewScalar>(delta_));
     return res;
   }
+
+  Scalar get_delta() const { return delta_; }
 
   /**
    * @brief Print relevant information of the smooth-1norm model
@@ -128,12 +137,13 @@ class ActivationModelSmooth1NormTpl
    * @param[out] os  Output stream object
    */
   virtual void print(std::ostream& os) const override {
-    os << "ActivationModelSmooth1Norm {nr=" << nr_ << ", eps=" << eps_ << "}";
+    os << "ActivationModelSmooth1Norm {nr=" << nr_ << ", delta=" << delta_
+       << "}";
   }
 
  protected:
   using Base::nr_;  //!< Dimension of the residual vector
-  Scalar eps_;      //!< Smoothing factor
+  Scalar delta_;    //!< Smoothing scale
 };
 
 template <typename _Scalar>
