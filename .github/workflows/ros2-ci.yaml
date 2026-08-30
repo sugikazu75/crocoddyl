@@ -52,20 +52,20 @@ jobs:
     name: ${{ matrix.env.name }}
     env:
       CCACHE_DIR: /github/home/.ccache             # Enable ccache
-      UPSTREAM_WORKSPACE: dependencies.rosinstall  # to build example-robot-data from source as it's not released via the ROS buildfarm
+      UPSTREAM_WORKSPACE: github:gepetto/example-robot-data#devel
       CTEST_OUTPUT_ON_FAILURE: 1
       BUILDER: colcon
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       # This step will fetch/store the directory used by ccache before/after the ci run
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ matrix.env.ROS_DISTRO }}-${{ matrix.env.ROS_REPO }}-${{ github.sha }}
           restore-keys: ccache-${{ matrix.env.ROS_DISTRO }}-${{ matrix.env.ROS_REPO }}-
-      - uses: 'ros-industrial/industrial_ci@0f4bd2d1b926eac95fd6bc5bd1fcb3051a6e927d'
+      - uses: 'ros-industrial/industrial_ci@125164b9f1883cdf1858897a7146d1bebf2be5c6'
         env: ${{ matrix.env }}

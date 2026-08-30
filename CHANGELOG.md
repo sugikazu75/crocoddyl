@@ -6,9 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+* Introduced task-convergence residuals, guidance models, and multibody task support in https://github.com/loco-3d/crocoddyl/pull/1529
+* :warning: BREAKING: `ActivationModelSmooth1Norm` and `ActivationModelWeightedSmooth1Norm` now use the classical pseudo-Huber form `delta^2 * (sqrt(1 + (r_i / delta)^2) - 1)`. For an old `eps`, use `delta = sqrt(eps)`. To additionally preserve the old derivatives, divide the containing cost weight by `delta` for the unweighted model, or divide the residual weights by `delta` for the weighted model; the resulting activation differs from the old one only by a constant. Fixed `ActivationModelSmooth2Norm` and `ActivationModelWeightedQuadraticBarrier` to compute the activation Hessian diagonal properly. Included a new weighted l1 activation in https://github.com/loco-3d/crocoddyl/pull/1524
+* Fixed OpenMP CMake export in https://github.com/loco-3d/crocoddyl/pull/1523
 * Fixed a bug where set_runningModels did not correctly update running_models_ in https://github.com/loco-3d/crocoddyl/pull/1489
 * Introduced single-floating point, shootings, numerics, endpoints features in solvers in https://github.com/loco-3d/crocoddyl/pull/1482
 * Fixed the compiler-flag definition used for action codegen + updated default compilation flags in https://github.com/loco-3d/crocoddyl/pull/1469
+* CMake: remove unconditional `DOXYGEN_USE_MATHJAX`. You can turn it on if necessary with `cmake -DDOXYGEN_USE_MATHJAX=ON`. https://github.com/loco-3d/crocoddyl/pull/1515
+
+## [3.2.1] - 2026-04-16
+
+* Udpate pinocchio header to fix compatibility wih v4 in https://github.com/loco-3d/crocoddyl/pull/1486
 * CMake: make example-robot-data more optional for ROS in https://github.com/loco-3d/crocoddyl/pull/1467
 
 ## [3.2.0] - 2025-12-09
@@ -352,7 +360,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 Initial release
 
-[Unreleased]: https://github.com/loco-3d/crocoddyl/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/loco-3d/crocoddyl/compare/v3.2.1...HEAD
+[3.2.1]: https://github.com/loco-3d/crocoddyl/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/loco-3d/crocoddyl/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/loco-3d/crocoddyl/compare/v3.0.1...v3.1.0
 [3.0.1]: https://github.com/loco-3d/crocoddyl/compare/v3.0.0...v3.0.1

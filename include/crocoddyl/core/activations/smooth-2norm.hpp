@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // BSD 3-Clause License
 //
-// Copyright (C) 2020-2025, LAAS-CNRS, Heriot-Watt University
+// Copyright (C) 2020-2026, LAAS-CNRS, Heriot-Watt University
 // Copyright note valid unless otherwise stated in individual files.
 // All rights reserved.
 ///////////////////////////////////////////////////////////////////////////////
@@ -18,8 +18,8 @@ namespace crocoddyl {
  * @brief Smooth-2Norm activation
  *
  * This activation function describes a smooth representation of a 2-norm of a
- * residual vector, i.e. \f[ \begin{equation} \sqrt{\epsilon + sum^nr_{i=0}
- * \|r_i\|^2} \end{equation} \f] where \f$\epsilon\f$ defines the smoothing
+ * residual vector, i.e. \f{equation}{ \sqrt{\epsilon + sum^nr_{i=0}
+ * \|r_i\|^2} \f} where \f$\epsilon\f$ defines the smoothing
  * factor, \f$r_i\f$ is the scalar residual for the \f$i\f$ constraints,
  * \f$nr\f$ is the dimension of the residual vector.
  *
@@ -91,7 +91,9 @@ class ActivationModelSmooth2NormTpl
     }
 
     data->Ar = r / data->a_value;
-    data->Arr.diagonal().array() = Scalar(1) / pow(data->a_value, Scalar(3));
+    data->Arr.diagonal().array() =
+        Scalar(1.) / data->a_value -
+        r.array().square() / pow(data->a_value, Scalar(3.));
   };
 
   /**

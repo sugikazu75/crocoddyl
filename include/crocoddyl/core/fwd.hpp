@@ -1,7 +1,7 @@
 ///////////////////////////////////////////////////////////////////////////////
 // BSD 3-Clause License
 //
-// Copyright (C) 2019-2025, LAAS-CNRS, University of Edinburgh,
+// Copyright (C) 2019-2026, LAAS-CNRS, University of Edinburgh,
 //                          Heriot-Watt University
 // Copyright note valid unless otherwise stated in individual files.
 // All rights reserved.
@@ -121,6 +121,27 @@ class ResidualModelAbstractTpl;
 template <typename Scalar>
 struct ResidualDataAbstractTpl;
 
+// task
+template <typename Scalar>
+class TaskModelAbstractTpl;
+template <typename Scalar>
+struct TaskDataAbstractTpl;
+
+template <typename Scalar>
+class GuidanceModelAbstractTpl;
+template <typename Scalar>
+struct GuidanceDataAbstractTpl;
+template <typename Scalar>
+class GuidanceModelLinearTpl;
+template <typename Scalar>
+class GuidanceModelSmoothSaturationTpl;
+template <typename Scalar>
+struct GuidanceDataSmoothSaturationTpl;
+template <typename Scalar>
+class GuidanceModelComponentwiseSaturationTpl;
+template <typename Scalar>
+struct GuidanceDataComponentwiseSaturationTpl;
+
 // activation
 template <typename Scalar>
 struct ActivationBoundsTpl;
@@ -154,6 +175,11 @@ template <typename Scalar>
 class ActivationModelSmooth1NormTpl;
 template <typename Scalar>
 struct ActivationDataSmooth1NormTpl;
+
+template <typename Scalar>
+class ActivationModelWeightedSmooth1NormTpl;
+template <typename Scalar>
+struct ActivationDataWeightedSmooth1NormTpl;
 
 template <typename Scalar>
 class ActivationModelSmooth2NormTpl;
@@ -248,6 +274,16 @@ template <typename Scalar>
 class ResidualModelJointAccelerationTpl;
 template <typename Scalar>
 struct ResidualDataJointAccelerationTpl;
+
+template <typename Scalar>
+class ResidualModelTaskFirstOrderTpl;
+template <typename Scalar>
+struct ResidualDataTaskFirstOrderTpl;
+
+template <typename Scalar>
+class ResidualModelTaskSecondOrderTpl;
+template <typename Scalar>
+struct ResidualDataTaskSecondOrderTpl;
 
 // cost
 template <typename Scalar>
@@ -385,6 +421,23 @@ typedef ResidualDataJointEffortTpl<double> ResidualDataJointEffort;
 typedef ResidualModelJointAccelerationTpl<double>
     ResidualModelJointAcceleration;
 typedef ResidualDataJointAccelerationTpl<double> ResidualDataJointAcceleration;
+typedef ResidualModelTaskFirstOrderTpl<double> ResidualModelTaskFirstOrder;
+typedef ResidualDataTaskFirstOrderTpl<double> ResidualDataTaskFirstOrder;
+typedef ResidualModelTaskSecondOrderTpl<double> ResidualModelTaskSecondOrder;
+typedef ResidualDataTaskSecondOrderTpl<double> ResidualDataTaskSecondOrder;
+
+typedef TaskModelAbstractTpl<double> TaskModelAbstract;
+typedef TaskDataAbstractTpl<double> TaskDataAbstract;
+
+typedef GuidanceModelAbstractTpl<double> GuidanceModelAbstract;
+typedef GuidanceDataAbstractTpl<double> GuidanceDataAbstract;
+typedef GuidanceModelLinearTpl<double> GuidanceModelLinear;
+typedef GuidanceModelSmoothSaturationTpl<double> GuidanceModelSmoothSaturation;
+typedef GuidanceDataSmoothSaturationTpl<double> GuidanceDataSmoothSaturation;
+typedef GuidanceModelComponentwiseSaturationTpl<double>
+    GuidanceModelComponentwiseSaturation;
+typedef GuidanceDataComponentwiseSaturationTpl<double>
+    GuidanceDataComponentwiseSaturation;
 
 typedef ActivationDataQuadraticBarrierTpl<double>
     ActivationDataQuadraticBarrier;
@@ -408,6 +461,10 @@ DEPRECATED(
     typedef ActivationDataSmooth1NormTpl<double> ActivationDataSmoothAbs;)
 typedef ActivationModelSmooth1NormTpl<double> ActivationModelSmooth1Norm;
 typedef ActivationDataSmooth1NormTpl<double> ActivationDataSmooth1Norm;
+typedef ActivationModelWeightedSmooth1NormTpl<double>
+    ActivationModelWeightedSmooth1Norm;
+typedef ActivationDataWeightedSmooth1NormTpl<double>
+    ActivationDataWeightedSmooth1Norm;
 typedef ActivationModelSmooth2NormTpl<double> ActivationModelSmooth2Norm;
 typedef ActivationDataSmooth2NormTpl<double> ActivationDataSmooth2Norm;
 typedef ActivationModel2NormBarrierTpl<double> ActivationModel2NormBarrier;
