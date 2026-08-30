@@ -51,6 +51,11 @@ template <typename Scalar>
 struct DifferentialActionDataFreeFwdDynamicsTpl;
 
 template <typename Scalar>
+class DifferentialActionModelCentroidalFwdDynamicsTpl;
+template <typename Scalar>
+struct DifferentialActionDataCentroidalFwdDynamicsTpl;
+
+template <typename Scalar>
 class DifferentialActionModelFreeInvDynamicsTpl;
 template <typename Scalar>
 struct DifferentialActionDataFreeInvDynamicsTpl;
@@ -233,6 +238,8 @@ class CoPSupportTpl;
 template <typename Scalar>
 class StateMultibodyTpl;
 
+class StateCentroidalTpl;
+
 // data collector
 template <typename Scalar>
 struct DataCollectorMultibodyTpl;
@@ -299,6 +306,10 @@ typedef DifferentialActionModelFreeFwdDynamicsTpl<double>
     DifferentialActionModelFreeFwdDynamics;
 typedef DifferentialActionDataFreeFwdDynamicsTpl<double>
     DifferentialActionDataFreeFwdDynamics;
+typedef DifferentialActionModelCentroidalFwdDynamicsTpl<double>
+    DifferentialActionModelCentroidalFwdDynamics;
+typedef DifferentialActionDataCentroidalFwdDynamicsTpl<double>
+    DifferentialActionDataCentroidalFwdDynamics;
 typedef DifferentialActionModelFreeInvDynamicsTpl<double>
     DifferentialActionModelFreeInvDynamics;
 typedef DifferentialActionDataFreeInvDynamicsTpl<double>
@@ -402,6 +413,7 @@ typedef ContactModel6DTpl<double> ContactModel6D;
 typedef ContactData6DTpl<double> ContactData6D;
 
 typedef StateMultibodyTpl<double> StateMultibody;
+typedef StateCentroidalTpl<double> StateCentroidal;
 
 typedef DataCollectorMultibodyTpl<double> DataCollectorMultibody;
 typedef DataCollectorActMultibodyTpl<double> DataCollectorActMultibody;
