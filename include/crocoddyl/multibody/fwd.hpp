@@ -133,6 +133,11 @@ template <typename Scalar>
 struct ResidualDataContactWrenchConeTpl;
 
 template <typename Scalar>
+class ResidualModelContactLineWrenchConeTpl;
+template <typename Scalar>
+struct ResidualDataContactLineWrenchConeTpl;
+
+template <typename Scalar>
 class ResidualModelContactControlGravTpl;
 template <typename Scalar>
 struct ResidualDataContactControlGravTpl;
@@ -244,6 +249,11 @@ class ContactModel6DTpl;
 template <typename Scalar>
 struct ContactData6DTpl;
 
+template <typename Scalar>
+class ContactModelRollingTpl;
+template <typename Scalar>
+struct ContactDataRollingTpl;
+
 // friction
 template <typename Scalar>
 class FrictionConeTpl;
@@ -253,6 +263,9 @@ class WrenchConeTpl;
 // cop support
 template <typename Scalar>
 class CoPSupportTpl;
+
+template <typename Scalar>
+class LineWrenchConeTpl;
 
 // state
 template <typename Scalar>
@@ -365,6 +378,7 @@ typedef ContactDataNumDiffTpl<double> ContactDataNumDiff;
 typedef FrictionConeTpl<double> FrictionCone;
 typedef WrenchConeTpl<double> WrenchCone;
 typedef CoPSupportTpl<double> CoPSupport;
+typedef LineWrenchConeTpl<double> LineWrenchCone;
 
 typedef ResidualModelCentroidalMomentumTpl<double>
     ResidualModelCentroidalMomentum;
@@ -385,6 +399,10 @@ typedef ResidualDataContactCoPPositionTpl<double>
 typedef ResidualModelContactWrenchConeTpl<double>
     ResidualModelContactWrenchCone;
 typedef ResidualDataContactWrenchConeTpl<double> ResidualDataContactWrenchCone;
+typedef ResidualModelContactLineWrenchConeTpl<double>
+    ResidualModelContactLineWrenchCone;
+typedef ResidualDataContactLineWrenchConeTpl<double>
+    ResidualDataContactLineWrenchCone;
 typedef ResidualModelContactControlGravTpl<double>
     ResidualModelContactControlGrav;
 typedef ResidualDataContactControlGravTpl<double>
@@ -445,6 +463,8 @@ typedef ContactModel3DTpl<double> ContactModel3D;
 typedef ContactData3DTpl<double> ContactData3D;
 typedef ContactModel6DTpl<double> ContactModel6D;
 typedef ContactData6DTpl<double> ContactData6D;
+typedef ContactModelRollingTpl<double> ContactModelRolling;
+typedef ContactDataRollingTpl<double> ContactDataRolling;
 
 typedef StateMultibodyTpl<double> StateMultibody;
 typedef StateMultibodyWithThrustsTpl<double> StateMultibodyWithThrusts;
