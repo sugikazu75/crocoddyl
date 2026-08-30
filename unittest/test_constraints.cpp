@@ -432,6 +432,11 @@ bool init_function() {
     for (size_t state_type =
              StateModelTypes::all[StateModelTypes::StateMultibody_TalosArm];
          state_type < StateModelTypes::all.size(); ++state_type) {
+      // The factory builds every model on a plain StateMultibody, so the
+      // thrust-augmented states are out of scope here.
+      if (get_nthrusters(StateModelTypes::all[state_type]) != 0) {
+        continue;
+      }
       register_constraint_model_unit_tests(
           ConstraintModelTypes::all[constraint_type],
           StateModelTypes::all[state_type]);
