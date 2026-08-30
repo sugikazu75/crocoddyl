@@ -180,19 +180,18 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
 
     updateWThrust(d, q);
 
-    d->Mtau = pseudoInverse(d->W_thrust);
+    updateActuationSet(d);
     data->u.noalias() = d->Mtau * tau;
-
-    d->S.noalias() = d->W_thrust * d->Mtau;
-    for (std::size_t k = 0; k < state_->get_nv(); ++k) {
-      data->tau_set[k] = if_static(d->S(k, k));
-    }
   }
 
   virtual void torqueTransform(
       const std::shared_ptr<ActuationDataAbstract>& data,
-      const Eigen::Ref<const VectorXs>&,
-      const Eigen::Ref<const VectorXs>&) override {}
+      const Eigen::Ref<const VectorXs>& x,
+      const Eigen::Ref<const VectorXs>&) override {
+    Data* d = static_cast<Data*>(data.get());
+    updateWThrust(d, x.head(state_->get_nq()));
+    updateActuationSet(d);
+  }
 
   virtual std::shared_ptr<ActuationDataAbstractTpl<Scalar>> createData()
       override {
@@ -215,6 +214,19 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
         std::make_shared<StateType>(state_->template cast<NewScalar>()),
         thrusters);
     return ret;
+  }
+
+  /** @brief Return the vector of thrusters. */
+  const std::vector<DistributedThruster>& get_thrusters() const {
+    return thrusters_;
+  }
+
+  /** @brief Return the number of thrusters. */
+  std::size_t get_nthrusters() const { return n_thrusters_; }
+
+  virtual void print(std::ostream& os) const override {
+    os << "ActuationModelFloatingBaseDistributedThrusters {nu=" << nu_
+       << ", nthrusters=" << n_thrusters_ << "}";
   }
 
  protected:
@@ -251,16 +263,29 @@ class ActuationModelFloatingBaseDistributedThrustersTpl
     }
   }
 
+  /**
+   * @brief Refresh the torque transform and the actuated subspace
+   *
+   * Both depend on the configuration through W(q), unlike in
+   * `ActuationModelFloatingBaseThrustersTpl` where the thrusters are rigidly
+   * attached to the root joint. They are only read by the inverse-dynamics
+   * models, which call `commands()` and `torqueTransform()` beforehand, so
+   * this (pseudo-inverse) is deliberately kept out of `calc()`.
+   */
+  void updateActuationSet(Data* d) {
+    d->Mtau = pseudoInverse(d->W_thrust);
+    d->S.noalias() = d->W_thrust * d->Mtau;
+    for (std::size_t k = 0; k < state_->get_nv(); ++k) {
+      d->tau_set[k] = if_static(d->S(k, k));
+    }
+  }
+
   void initData(const std::shared_ptr<Data>& data) {
     // Update the joint actuation part
     data->W_thrust.bottomRightCorner(nu_ - n_thrusters_, nu_ - n_thrusters_)
         .diagonal()
         .setOnes();
-    data->Mtau = pseudoInverse(data->W_thrust);
-    data->S.noalias() = data->W_thrust * data->Mtau;
-    for (std::size_t k = 0; k < state_->get_nv(); ++k) {
-      data->tau_set[k] = if_static(data->S(k, k));
-    }
+    updateActuationSet(data.get());
   }
 
   // Use for floating-point types
