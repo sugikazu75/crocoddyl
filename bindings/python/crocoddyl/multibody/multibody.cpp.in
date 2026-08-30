@@ -16,9 +16,12 @@ void exposeMultibody() {
   exposeWrenchCone();
   exposeCoPSupport();
   exposeStateMultibody();
+  exposeStateMultibodyWithThrusts();
   exposeActuationFloatingBase();
   exposeActuationFull();
   exposeActuationFloatingBaseThruster();
+  exposeActuationFloatingBaseDistributedThruster();
+  exposeActuationFloatingBaseThrusterRates();
   exposeForceAbstract();
   exposeContactAbstract();
   exposeImpulseAbstract();
@@ -31,6 +34,7 @@ void exposeMultibody() {
   exposeDifferentialActionFreeInvDynamics();
   exposeDifferentialActionContactFwdDynamics();
   exposeDifferentialActionContactInvDynamics();
+  exposeDifferentialActionContactFwdDynamicsWithThrusts();
   exposeActionImpulseFwdDynamics();
   exposeResidualState();
   exposeResidualCentroidalMomentum();
