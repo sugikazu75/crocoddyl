@@ -555,23 +555,22 @@ bool init_function() {
     for (size_t state_type =
              StateModelTypes::all[StateModelTypes::StateMultibody_TalosArm];
          state_type < StateModelTypes::all.size(); ++state_type) {
+      // The residual factory builds every model on a plain StateMultibody,
+      // so the thrust-augmented states -- and the actuation models that
+      // require them -- are out of scope here.
+      if (get_nthrusters(StateModelTypes::all[state_type]) != 0) {
+        continue;
+      }
       for (size_t actuation_type = 0;
            actuation_type < ActuationModelTypes::all.size(); ++actuation_type) {
-        if (ActuationModelTypes::all[actuation_type] !=
-            ActuationModelTypes::ActuationModelFloatingBaseThrusters) {
-          register_residual_model_unit_tests(
-              ResidualModelTypes::all[residual_type],
-              StateModelTypes::all[state_type],
-              ActuationModelTypes::all[actuation_type]);
-        } else if (StateModelTypes::all[state_type] !=
-                       StateModelTypes::StateMultibody_TalosArm &&
-                   StateModelTypes::all[state_type] !=
-                       StateModelTypes::StateMultibodyContact2D_TalosArm) {
-          register_residual_model_unit_tests(
-              ResidualModelTypes::all[residual_type],
-              StateModelTypes::all[state_type],
-              ActuationModelTypes::all[actuation_type]);
+        if (!are_compatible(StateModelTypes::all[state_type],
+                            ActuationModelTypes::all[actuation_type])) {
+          continue;
         }
+        register_residual_model_unit_tests(
+            ResidualModelTypes::all[residual_type],
+            StateModelTypes::all[state_type],
+            ActuationModelTypes::all[actuation_type]);
       }
     }
   }
