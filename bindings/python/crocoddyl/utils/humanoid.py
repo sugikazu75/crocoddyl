@@ -53,14 +53,24 @@ class HumanoidLocoManipulation:
     def createModel(
         self,
         qref=None,
-        footContacts=list(),
-        handContacts=list(),
+        footContacts=None,
+        handContacts=None,
         bodiesTarget=None,
-        handsTarget=dict(),
-        feetTarget=dict(),
+        handsTarget=None,
+        feetTarget=None,
         switch=False,
         constraint=False,
     ):
+        if footContacts is None:
+            footContacts = []
+        if handContacts is None:
+            handContacts = []
+        if bodiesTarget is None:
+            bodiesTarget = {}
+        if handsTarget is None:
+            handsTarget = {}
+        if feetTarget is None:
+            feetTarget = {}
         if self._fwddyn:
             nu = self.actuation.nu if switch is False else 0
         else:
@@ -76,22 +86,21 @@ class HumanoidLocoManipulation:
         else:
             impulses = crocoddyl.ImpulseModelMultiple(self.state)
         # Cost for body target
-        if bodiesTarget is not None:
-            for name, Mref in bodiesTarget.items():
-                frame_id = self.robot_model.getFrameId(name)
-                # Cost for target reaching: bodies
-                if isinstance(Mref, (np.ndarray, np.generic)):
-                    costs.addCost(
-                        name + "_pose",
-                        self._createFrameRotationCost(name, Mref, np.ones(3), nu),
-                        1e3,
-                    )
-                elif isinstance(Mref, pinocchio.SE3):
-                    costs.addCost(
-                        name + "_pose",
-                        self._createFramePlacementCost(name, Mref, np.ones(6), nu),
-                        1e3,
-                    )
+        for name, Mref in bodiesTarget.items():
+            frame_id = self.robot_model.getFrameId(name)
+            # Cost for target reaching: bodies
+            if isinstance(Mref, (np.ndarray, np.generic)):
+                costs.addCost(
+                    name + "_pose",
+                    self._createFrameRotationCost(name, Mref, np.ones(3), nu),
+                    1e3,
+                )
+            elif isinstance(Mref, pinocchio.SE3):
+                costs.addCost(
+                    name + "_pose",
+                    self._createFramePlacementCost(name, Mref, np.ones(6), nu),
+                    1e3,
+                )
         # Cost for self-collision, and for state and control regularization
         costs.addCost("stateLimitsCost", self._createStateLimsCost(nu), 1e3)
         costs.addCost(
@@ -250,7 +259,7 @@ class HumanoidLocoManipulation:
             dsSwitch2 = self.createModel(handsTarget=handsTarget3, switch=True)
             models += [dsModel] * Tds + [dsSwitch2]
         # Model for leaving the bars
-        handsTermTarget = dict()
+        handsTermTarget = {}
         q0 = copy.deepcopy(self.q0)
         q0[:2] = (LF_pose.translation + RF_pose.translation)[:2] / 2
         pinocchio.forwardKinematics(self.robot_model, self.robot_data, q0)
@@ -401,7 +410,7 @@ class HumanoidLocoManipulation:
                 )
             models += [dsModel] * Tds + [dsSwitch2]
         # Model for leaving the bars
-        handsTermTarget = dict()
+        handsTermTarget = {}
         q0 = copy.deepcopy(self.q0)
         q0[:2] = (LF_pose.translation + RF_pose.translation)[:2] / 2
         pinocchio.forwardKinematics(self.robot_model, self.robot_data, q0)
@@ -540,7 +549,7 @@ class HumanoidLocoManipulation:
                 )
             models += [backflipModel] * Tflipseg + [backflipAngleModel]
         # Model for resting posture
-        handsTermTarget = dict()
+        handsTermTarget = {}
         qref = copy.deepcopy(self.qref)
         qref[:2] = (LF_pose.translation + RF_pose.translation)[:2] / 2
         pinocchio.forwardKinematics(self.robot_model, self.robot_data, qref)
@@ -548,7 +557,7 @@ class HumanoidLocoManipulation:
             frame_id = self.robot_model.getFrameId(name)
             pinocchio.updateFramePlacement(self.robot_model, self.robot_data, frame_id)
             handsTermTarget[name] = self.robot_data.oMf[frame_id]
-        bodiesTarget = dict()
+        bodiesTarget = {}
         bodiesTarget["torso_1_joint"] = np.eye(3)
         bodiesTarget["torso_2_joint"] = pinocchio.SE3(np.eye(3), qref[:3])
         models += [standModel] * Tend
