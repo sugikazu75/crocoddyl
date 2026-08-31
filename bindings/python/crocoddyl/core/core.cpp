@@ -81,6 +81,9 @@ void exposeCore() {
   exposeSolverBoxDDP();
   exposeSolverBoxFDDP();
   exposeSolverIntro();
+#ifdef CROCODDYL_WITH_HPIPM
+  exposeSolverHpipmSQP();
+#endif
 #ifdef CROCODDYL_WITH_IPOPT
   exposeSolverIpopt();
 #endif
