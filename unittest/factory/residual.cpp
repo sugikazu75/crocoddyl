@@ -11,6 +11,7 @@
 
 #include "../random_generator.hpp"
 #include "crocoddyl/core/residuals/control.hpp"
+#include "crocoddyl/core/residuals/select.hpp"
 #include "crocoddyl/core/residuals/task-first-order.hpp"
 #include "crocoddyl/core/residuals/task-second-order.hpp"
 #include "crocoddyl/multibody/residuals/centroidal-momentum.hpp"
@@ -61,6 +62,9 @@ std::ostream& operator<<(std::ostream& os, ResidualModelTypes::Type type) {
       break;
     case ResidualModelTypes::ResidualModelControlGrav:
       os << "ResidualModelControlGrav";
+      break;
+    case ResidualModelTypes::ResidualModelSelect:
+      os << "ResidualModelSelect";
       break;
     case ResidualModelTypes::ResidualModelTaskFirstOrder:
       os << "ResidualModelTaskFirstOrder";
@@ -160,6 +164,17 @@ std::shared_ptr<crocoddyl::ResidualModelAbstract> ResidualModelFactory::create(
       residual =
           std::make_shared<crocoddyl::ResidualModelControlGrav>(state, nu);
       break;
+    case ResidualModelTypes::ResidualModelSelect: {
+      // The motivating case: keep the translation and the pitch/yaw rows of a
+      // 6d placement, drop the roll one. The rows are deliberately given out
+      // of order so that the reordering is exercised too.
+      std::shared_ptr<crocoddyl::ResidualModelAbstract> placement =
+          std::make_shared<crocoddyl::ResidualModelFramePlacement>(
+              state, frame_index, frame_SE3, nu);
+      const std::vector<std::size_t> rows = {4, 0, 1, 2, 5};
+      residual =
+          std::make_shared<crocoddyl::ResidualModelSelect>(placement, rows);
+    } break;
     case ResidualModelTypes::ResidualModelTaskFirstOrder: {
       TaskModelFactory task_factory;
       GuidanceModelFactory guidance_factory;

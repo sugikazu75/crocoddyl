@@ -13,6 +13,7 @@
 #include "crocoddyl/multibody/contacts/contact-2d.hpp"
 #include "crocoddyl/multibody/contacts/contact-3d.hpp"
 #include "crocoddyl/multibody/contacts/contact-6d.hpp"
+#include "crocoddyl/multibody/contacts/contact-rolling.hpp"
 
 namespace crocoddyl {
 namespace unittest {
@@ -52,6 +53,9 @@ std::ostream& operator<<(std::ostream& os,
       break;
     case ContactModelTypes::ContactModel6D_LWA:
       os << "ContactModel6D_LWA";
+      break;
+    case ContactModelTypes::ContactModelRolling:
+      os << "ContactModelRolling";
       break;
     case ContactModelTypes::NbContactModelTypes:
       os << "NbContactModelTypes";
@@ -146,6 +150,12 @@ std::shared_ptr<crocoddyl::ContactModelAbstract> ContactModelFactory::create(
           state, frame_id, pinocchio::SE3::Identity(),
           pinocchio::ReferenceFrame::LOCAL_WORLD_ALIGNED, nu, gains);
       break;
+    case ContactModelTypes::ContactModelRolling: {
+      pinocchio::SE3 M = pinocchio::SE3::Random();
+      contact = std::make_shared<crocoddyl::ContactModelRolling>(
+          state, frame_id, 0.05, M, nu, gains);
+      break;
+    }
     default:
       throw_pretty(__FILE__ ": Wrong ContactModelTypes::Type given");
       break;

@@ -100,6 +100,7 @@ option(BUILD_BENCHMARK "Build the benchmark" ON)
 option(BUILD_EXAMPLES "Build the examples" ON)
 option(BUILD_WITH_ODYN "Build the ODYN wrapper." ON)
 option(BUILD_WITH_IPOPT "Build the IPOPT wrapper." ON)
+option(BUILD_WITH_HPIPM "Build the HPIPM SQP wrapper." ON)
 option(GENERATE_PYTHON_STUBS
        "Generate the Python stubs associated to the Python library" OFF)
 option(INSTALL_DOCUMENTATION "Generate and install the documentation" OFF)
@@ -162,6 +163,10 @@ endif()
 
 if(BUILD_WITH_ODYN)
   add_project_dependency(odyn 0.7.0 PKG_CONFIG_REQUIRES "odyn >= 0.7.0")
+endif()
+
+if(BUILD_WITH_HPIPM)
+  add_project_dependency(hpipm-cpp QUIET CONFIG)
 endif()
 
 if(BUILD_WITH_IPOPT)
@@ -242,6 +247,13 @@ if(BUILD_WITH_ODYN AND odyn_FOUND)
   set(PACKAGE_EXTRA_MACROS
       "${PACKAGE_EXTRA_MACROS}\nADD_DEFINITIONS(-DCROCODDYL_WITH_ODYN)")
   link_directories(${odyn_LIBRARY_DIRS})
+endif()
+
+# Add HPIPM (via hpipm-cpp)
+if(BUILD_WITH_HPIPM AND hpipm-cpp_FOUND)
+  add_definitions(-DCROCODDYL_WITH_HPIPM)
+  set(PACKAGE_EXTRA_MACROS
+      "${PACKAGE_EXTRA_MACROS}\nADD_DEFINITIONS(-DCROCODDYL_WITH_HPIPM)")
 endif()
 
 # Add Ipopt
@@ -355,6 +367,10 @@ if(UNIX AND NOT BUILD_STANDALONE_PYTHON_INTERFACE)
 
   if(BUILD_WITH_ODYN AND ODYN_FOUND)
     target_link_libraries(${PROJECT_NAME} odyn::odyn)
+  endif()
+
+  if(BUILD_WITH_HPIPM AND hpipm-cpp_FOUND)
+    target_link_libraries(${PROJECT_NAME} hpipm-cpp::hpipm-cpp)
   endif()
 
   if(BUILD_WITH_IPOPT AND IPOPT_FOUND)

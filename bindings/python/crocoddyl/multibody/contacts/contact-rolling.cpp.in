@@ -1,0 +1,190 @@
+///////////////////////////////////////////////////////////////////////////////
+// BSD 3-Clause License
+//
+// Copyright (C) 2026-2026, The University of Tokyo
+// Copyright note valid unless otherwise stated in individual files.
+// All rights reserved.
+///////////////////////////////////////////////////////////////////////////////
+
+// Auto-generated file for @SCALAR_TYPE@
+#include "crocoddyl/multibody/contacts/contact-rolling.hpp"
+
+#include "python/crocoddyl/multibody/multibody.hpp"
+
+namespace crocoddyl {
+namespace python {
+
+template <typename Model>
+struct ContactModelRollingVisitor
+    : public bp::def_visitor<ContactModelRollingVisitor<Model>> {
+  typedef typename Model::Scalar Scalar;
+  typedef typename Model::StateMultibody State;
+  typedef typename Model::SE3 SE3;
+  typedef typename Model::Vector2s Vector2s;
+  typedef typename Model::Vector3s Vector3s;
+  template <class PyClass>
+  void visit(PyClass& cl) const {
+    cl.def(bp::init<std::shared_ptr<State>, pinocchio::FrameIndex, Scalar, SE3,
+                    bp::optional<Vector2s, Vector3s>>(
+               bp::args("self", "state", "id", "radius", "pref", "gains",
+                        "axis"),
+               "Initialize the rolling contact model.\n\n"
+               ":param state: state of the multibody system\n"
+               ":param id: reference frame id, placed on the cylinder axis\n"
+               ":param radius: radius of the cylindrical sole\n"
+               ":param pref: support placement used for the Baumgarte "
+               "stabilization\n"
+               ":param gains: gains of the contact model (default "
+               "np.array([0.,0.]))\n"
+               ":param axis: rolling axis in the reference frame (default "
+               "np.array([1.,0.,0.]))"))
+        .def("calc", &Model::calc, bp::args("self", "data", "x"),
+             "Compute the rolling contact Jacobian and drift.\n\n"
+             ":param data: contact data\n"
+             ":param x: state point (dim. state.nx)")
+        .def("calcDiff", &Model::calcDiff, bp::args("self", "data", "x"),
+             "Compute the derivatives of the rolling contact holonomic "
+             "constraint.\n\n"
+             "It assumes that calc has been run first.\n"
+             ":param data: contact data\n"
+             ":param x: state point (dim. state.nx)")
+        .def("updateForce", &Model::updateForce,
+             bp::args("self", "data", "force"),
+             "Convert the force into a stack of spatial forces.\n\n"
+             ":param data: contact data\n"
+             ":param force: force vector (dimension 5)")
+        .def("createData", &Model::createData,
+             bp::with_custodian_and_ward_postcall<0, 2>(),
+             bp::args("self", "data"),
+             "Create the rolling contact data.\n\n"
+             ":param data: Pinocchio data\n"
+             ":return contact data.")
+        .add_property("radius", &Model::get_radius, &Model::set_radius,
+                      "radius of the cylindrical sole")
+        .add_property(
+            "reference",
+            bp::make_function(&Model::get_reference,
+                              bp::return_value_policy<bp::return_by_value>()),
+            &Model::set_reference, "support placement")
+        .add_property(
+            "axis",
+            bp::make_function(&Model::get_axis,
+                              bp::return_value_policy<bp::return_by_value>()),
+            &Model::set_axis, "rolling axis in the reference frame")
+        .add_property(
+            "gains",
+            bp::make_function(&Model::get_gains,
+                              bp::return_value_policy<bp::return_by_value>()),
+            "contact gains");
+  }
+};
+
+template <typename Data>
+struct ContactDataRollingVisitor
+    : public bp::def_visitor<ContactDataRollingVisitor<Data>> {
+  template <class PyClass>
+  void visit(PyClass& cl) const {
+    cl.add_property(
+          "cMf",
+          bp::make_getter(&Data::cMf,
+                          bp::return_value_policy<bp::return_by_value>()),
+          "placement of the reference frame w.r.t. the contact frame")
+        .add_property(
+            "Rc", bp::make_getter(&Data::Rc, bp::return_internal_reference<>()),
+            "rotation from the reference frame to the support axes")
+        .add_property(
+            "v",
+            bp::make_getter(&Data::v,
+                            bp::return_value_policy<bp::return_by_value>()),
+            "spatial velocity of the contact body")
+        .add_property(
+            "a0_local",
+            bp::make_getter(&Data::a0_local,
+                            bp::return_value_policy<bp::return_by_value>()),
+            "local classical acceleration of the contact frame")
+        .add_property(
+            "a0_full",
+            bp::make_getter(&Data::a0_full,
+                            bp::return_value_policy<bp::return_by_value>()),
+            "6d contact drift expressed in the support axes")
+        .add_property(
+            "f_local",
+            bp::make_getter(&Data::f_local,
+                            bp::return_value_policy<bp::return_by_value>()),
+            "spatial contact force in local coordinates")
+        .add_property(
+            "Jc_full",
+            bp::make_getter(&Data::Jc_full, bp::return_internal_reference<>()),
+            "6d contact Jacobian expressed in the support axes")
+        .add_property(
+            "dp", bp::make_getter(&Data::dp, bp::return_internal_reference<>()),
+            "contact-point position error used by the Baumgarte term")
+        .add_property(
+            "fJf",
+            bp::make_getter(&Data::fJf, bp::return_internal_reference<>()),
+            "local Jacobian of the contact frame");
+  }
+};
+
+#define CROCODDYL_CONTACT_MODEL_ROLLING_PYTHON_BINDINGS(Scalar)                \
+  typedef ContactModelRollingTpl<Scalar> Model;                                \
+  typedef ContactModelAbstractTpl<Scalar> ModelBase;                           \
+  typedef Model::StateMultibody State;                                         \
+  typedef Model::SE3 SE3;                                                      \
+  typedef Model::Vector2s Vector2s;                                            \
+  typedef Model::Vector3s Vector3s;                                            \
+  bp::register_ptr_to_python<std::shared_ptr<Model>>();                        \
+  bp::class_<Model, bp::bases<ModelBase>>(                                     \
+      "ContactModelRolling",                                                   \
+      "Rigid rolling (line) contact model.\n\n"                                \
+      "It describes a cylindrical foot lying on a flat support and free to "   \
+      "roll about its own axis, which leaves 5 acceleration-based holonomic "  \
+      "constraints: the material contact point does not move, and the sole "   \
+      "neither pitches nor yaws. The reference frame must lie on the "         \
+      "cylinder axis, and the support geometry is carried by pref: its z "     \
+      "axis is the surface normal, its x axis the desired heading of the "     \
+      "rolling axis.",                                                         \
+      bp::init<std::shared_ptr<State>, pinocchio::FrameIndex, Scalar, SE3,     \
+               std::size_t, bp::optional<Vector2s, Vector3s>>(                 \
+          bp::args("self", "state", "id", "radius", "pref", "nu", "gains",     \
+                   "axis"),                                                    \
+          "Initialize the rolling contact model.\n\n"                          \
+          ":param state: state of the multibody system\n"                      \
+          ":param id: reference frame id, placed on the cylinder axis\n"       \
+          ":param radius: radius of the cylindrical sole\n"                    \
+          ":param pref: support placement used for the Baumgarte "             \
+          "stabilization\n"                                                    \
+          ":param nu: dimension of control vector\n"                           \
+          ":param gains: gains of the contact model (default "                 \
+          "np.array([0.,0.]))\n"                                               \
+          ":param axis: rolling axis in the reference frame (default "         \
+          "np.array([1.,0.,0.]))"))                                            \
+      .def(ContactModelRollingVisitor<Model>())                                \
+      .def(CastVisitor<Model>())                                               \
+      .def(PrintableVisitor<Model>())                                          \
+      .def(CopyableVisitor<Model>());
+
+#define CROCODDYL_CONTACT_DATA_ROLLING_PYTHON_BINDINGS(Scalar)    \
+  typedef ContactDataRollingTpl<Scalar> Data;                     \
+  typedef ContactDataAbstractTpl<Scalar> DataBase;                \
+  typedef ContactModelRollingTpl<Scalar> Model;                   \
+  typedef pinocchio::DataTpl<Scalar> PinocchioData;               \
+  bp::register_ptr_to_python<std::shared_ptr<Data>>();            \
+  bp::class_<Data, bp::bases<DataBase>>(                          \
+      "ContactDataRolling", "Data for rolling contact.\n\n",      \
+      bp::init<Model*, PinocchioData*>(                           \
+          bp::args("self", "model", "data"),                      \
+          "Create rolling contact data.\n\n"                      \
+          ":param model: rolling contact model\n"                 \
+          ":param data: Pinocchio data")[bp::with_custodian_and_ward< \
+          1, 2, bp::with_custodian_and_ward<1, 3>>()])            \
+      .def(ContactDataRollingVisitor<Data>())                     \
+      .def(CopyableVisitor<Data>());
+
+void exposeContactRolling() {
+  CROCODDYL_CONTACT_MODEL_ROLLING_PYTHON_BINDINGS(@SCALAR_TYPE@)
+  CROCODDYL_CONTACT_DATA_ROLLING_PYTHON_BINDINGS(@SCALAR_TYPE@)
+}
+
+}  // namespace python
+}  // namespace crocoddyl
