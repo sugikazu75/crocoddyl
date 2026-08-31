@@ -266,6 +266,11 @@ template <typename Scalar>
 struct ResidualDataControlTpl;
 
 template <typename Scalar>
+class ResidualModelSelectTpl;
+template <typename Scalar>
+struct ResidualDataSelectTpl;
+
+template <typename Scalar>
 class ResidualModelJointEffortTpl;
 template <typename Scalar>
 struct ResidualDataJointEffortTpl;
@@ -416,6 +421,8 @@ typedef ResidualModelAbstractTpl<double> ResidualModelAbstract;
 typedef ResidualDataAbstractTpl<double> ResidualDataAbstract;
 typedef ResidualModelControlTpl<double> ResidualModelControl;
 typedef ResidualDataControlTpl<double> ResidualDataControl;
+typedef ResidualModelSelectTpl<double> ResidualModelSelect;
+typedef ResidualDataSelectTpl<double> ResidualDataSelect;
 typedef ResidualModelJointEffortTpl<double> ResidualModelJointEffort;
 typedef ResidualDataJointEffortTpl<double> ResidualDataJointEffort;
 typedef ResidualModelJointAccelerationTpl<double>
