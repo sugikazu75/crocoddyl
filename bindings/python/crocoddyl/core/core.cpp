@@ -39,6 +39,7 @@ void exposeCore() {
   exposeIntegratedActionRK();
   exposeCostAbstract();
   exposeResidualControl();
+  exposeResidualSelect();
   exposeResidualJointEffort();
   exposeResidualJointAcceleration();
   exposeResidualTaskFirstOrder();

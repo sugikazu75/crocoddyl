@@ -41,6 +41,7 @@ void exposeIntegratedActionEuler();
 void exposeIntegratedActionRK();
 void exposeCostAbstract();
 void exposeResidualControl();
+void exposeResidualSelect();
 void exposeResidualJointEffort();
 void exposeResidualJointAcceleration();
 void exposeResidualTaskFirstOrder();

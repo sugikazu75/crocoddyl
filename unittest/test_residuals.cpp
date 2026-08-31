@@ -12,9 +12,11 @@
 #include "crocoddyl/core/residuals/control.hpp"
 #include "crocoddyl/core/residuals/joint-acceleration.hpp"
 #include "crocoddyl/core/residuals/joint-effort.hpp"
+#include "crocoddyl/core/residuals/select.hpp"
 #include "crocoddyl/multibody/data/multibody.hpp"
 #include "crocoddyl/multibody/residuals/centroidal-momentum.hpp"
 #include "crocoddyl/multibody/residuals/com-position.hpp"
+#include "crocoddyl/multibody/residuals/frame-placement.hpp"
 #include "crocoddyl/multibody/residuals/state.hpp"
 #include "factory/actuation.hpp"
 #include "factory/residual.hpp"
@@ -516,6 +518,90 @@ void test_reference() {
 #endif
 }
 
+void test_select() {
+  // The factory builds a ResidualModelSelect, so the numdiff, dimension and
+  // casting checks above already cover it. What they cannot cover is *which*
+  // rows come out: numdiff only compares calcDiff against calc, so a selection
+  // that picks the wrong rows consistently in both passes unnoticed. The same
+  // goes for the constructor guards, which the factory never exercises.
+  StateModelFactory state_factory;
+  const StateModelTypes::Type state_type =
+      StateModelTypes::StateMultibody_Talos;
+  const std::shared_ptr<crocoddyl::StateMultibody> state =
+      std::static_pointer_cast<crocoddyl::StateMultibody>(
+          state_factory.create(state_type));
+  const std::size_t nu = state->get_nv();
+  const std::shared_ptr<crocoddyl::ResidualModelAbstract> wrapped =
+      std::make_shared<crocoddyl::ResidualModelFramePlacement>(
+          state, state->get_pinocchio()->frames.size() - 1,
+          pinocchio::SE3::Random(), nu);
+
+  // Rows given out of order and with a repetition, to pin down the ordering
+  const std::vector<std::size_t> rows = {5, 0, 5, 2};
+  crocoddyl::ResidualModelSelect model(wrapped, rows);
+  BOOST_CHECK(model.get_nr() == rows.size());
+  BOOST_CHECK(model.get_rows() == rows);
+  BOOST_CHECK(model.get_residual() == wrapped);
+  BOOST_CHECK(model.get_nu() == wrapped->get_nu());
+  BOOST_CHECK(model.get_state() == wrapped->get_state());
+
+  pinocchio::Model& pinocchio_model = *state->get_pinocchio().get();
+  pinocchio::Data pinocchio_data(pinocchio_model);
+  crocoddyl::DataCollectorMultibody shared_data(&pinocchio_data);
+  const std::shared_ptr<crocoddyl::ResidualDataAbstract> wrapped_data =
+      wrapped->createData(&shared_data);
+  const std::shared_ptr<crocoddyl::ResidualDataAbstract> data =
+      model.createData(&shared_data);
+  const Eigen::VectorXd x = state->rand();
+  const Eigen::VectorXd u = Eigen::VectorXd::Random(nu);
+  crocoddyl::unittest::updateAllPinocchio(&pinocchio_model, &pinocchio_data, x);
+
+  wrapped->calc(wrapped_data, x, u);
+  wrapped->calcDiff(wrapped_data, x, u);
+  model.calc(data, x, u);
+  model.calcDiff(data, x, u);
+  for (std::size_t i = 0; i < rows.size(); ++i) {
+    BOOST_CHECK_EQUAL(data->r(i), wrapped_data->r(rows[i]));
+    BOOST_CHECK(data->Rx.row(i).isApprox(wrapped_data->Rx.row(rows[i])));
+    BOOST_CHECK(data->Ru.row(i).isApprox(wrapped_data->Ru.row(rows[i])));
+  }
+
+  // A row that was left out must not surface in the selection. Row 1 is not
+  // identically zero here, so the check below is meaningful.
+  const std::size_t dropped = 1;
+  BOOST_CHECK(std::find(rows.begin(), rows.end(), dropped) == rows.end());
+  BOOST_CHECK(wrapped_data->Rx.row(dropped).norm() > 1e-9);
+  for (std::size_t i = 0; i < rows.size(); ++i) {
+    BOOST_CHECK(!data->Rx.row(i).isApprox(wrapped_data->Rx.row(dropped), 1e-9));
+  }
+
+  // The state-only overloads select the same way
+  wrapped->calc(wrapped_data, x);
+  wrapped->calcDiff(wrapped_data, x);
+  model.calc(data, x);
+  model.calcDiff(data, x);
+  for (std::size_t i = 0; i < rows.size(); ++i) {
+    BOOST_CHECK_EQUAL(data->r(i), wrapped_data->r(rows[i]));
+    BOOST_CHECK(data->Rx.row(i).isApprox(wrapped_data->Rx.row(rows[i])));
+  }
+
+  // The selection has to survive a cast
+#ifdef NDEBUG  // Run only in release mode
+  BOOST_CHECK(model.cast<float>().get_rows() == rows);
+#endif
+
+  // Constructor guards, which the factory never reaches
+  // crocoddyl::Exception derives from std::exception, not std::runtime_error
+  BOOST_CHECK_THROW(
+      crocoddyl::ResidualModelSelect(wrapped, std::vector<std::size_t>()),
+      crocoddyl::Exception);
+  BOOST_CHECK_THROW(
+      crocoddyl::ResidualModelSelect(wrapped, std::vector<std::size_t>({6})),
+      crocoddyl::Exception);
+  BOOST_CHECK_NO_THROW(
+      crocoddyl::ResidualModelSelect(wrapped, std::vector<std::size_t>({5})));
+}
+
 //----------------------------------------------------------------------------//
 
 void register_residual_model_unit_tests(
@@ -534,6 +620,15 @@ void register_residual_model_unit_tests(
   ts->add(
       BOOST_TEST_CASE(boost::bind(&test_partial_derivatives_against_numdiff,
                                   residual_type, state_type, actuation_type)));
+  framework::master_test_suite().add(ts);
+}
+
+void register_residual_select_unit_tests() {
+  boost::test_tools::output_test_stream test_name;
+  test_name << "test_select";
+  std::cout << "Running " << test_name.str() << std::endl;
+  test_suite* ts = BOOST_TEST_SUITE(test_name.str());
+  ts->add(BOOST_TEST_CASE(boost::bind(&test_select)));
   framework::master_test_suite().add(ts);
 }
 
@@ -574,6 +669,7 @@ bool init_function() {
       }
     }
   }
+  register_residual_select_unit_tests();
   regiter_residual_reference_unit_tests();
   return true;
 }
