@@ -15,6 +15,7 @@ void exposeMultibody() {
   exposeFrictionCone();
   exposeWrenchCone();
   exposeCoPSupport();
+  exposeLineWrenchCone();
   exposeStateMultibody();
   exposeActuationFloatingBase();
   exposeActuationFull();
@@ -39,6 +40,7 @@ void exposeMultibody() {
   exposeResidualContactFrictionCone();
   exposeResidualContactCoPPosition();
   exposeResidualContactWrenchCone();
+  exposeResidualContactLineWrenchCone();
   exposeResidualContactControlGrav();
   exposeResidualControlGrav();
   exposeResidualFramePlacement();
@@ -63,6 +65,7 @@ void exposeMultibody() {
   exposeContact2D();
   exposeContact3D();
   exposeContact6D();
+  exposeContactRolling();
   exposeImpulse3D();
   exposeImpulse6D();
 }
