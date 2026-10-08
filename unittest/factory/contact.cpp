@@ -57,6 +57,9 @@ std::ostream& operator<<(std::ostream& os,
     case ContactModelTypes::ContactModelRolling:
       os << "ContactModelRolling";
       break;
+    case ContactModelTypes::ContactModelRollingLateralFree:
+      os << "ContactModelRollingLateralFree";
+      break;
     case ContactModelTypes::NbContactModelTypes:
       os << "NbContactModelTypes";
       break;
@@ -154,6 +157,14 @@ std::shared_ptr<crocoddyl::ContactModelAbstract> ContactModelFactory::create(
       pinocchio::SE3 M = pinocchio::SE3::Random();
       contact = std::make_shared<crocoddyl::ContactModelRolling>(
           state, frame_id, 0.05, M, nu, gains);
+      break;
+    }
+    case ContactModelTypes::ContactModelRollingLateralFree: {
+      pinocchio::SE3 M = pinocchio::SE3::Random();
+      auto rolling = std::make_shared<crocoddyl::ContactModelRolling>(
+          state, frame_id, 0.05, M, nu, gains);
+      rolling->set_lateral_free(true);
+      contact = rolling;
       break;
     }
     default:

@@ -100,6 +100,10 @@ void ContactModelRollingTpl<Scalar>::calc(
   d->a0.template head<3>() = d->a0_full.linear();
   d->a0[3] = d->a0_full.angular()[1];
   d->a0[4] = d->a0_full.angular()[2];
+  if (lateral_free_) {
+    d->Jc.row(1).setZero();
+    d->a0[1] = Scalar(0.);
+  }
 }
 
 template <typename Scalar>
@@ -194,6 +198,9 @@ void ContactModelRollingTpl<Scalar>::calcDiff(
   d->da0_dx.template topRows<3>() = d->dlin_dx;
   d->da0_dx.row(3) = d->dang_dx.row(1);
   d->da0_dx.row(4) = d->dang_dx.row(2);
+  if (lateral_free_) {
+    d->da0_dx.row(1).setZero();
+  }
 }
 
 template <typename Scalar>
@@ -237,6 +244,7 @@ ContactModelRollingTpl<NewScalar> ContactModelRollingTpl<Scalar>::cast() const {
       std::make_shared<StateType>(state_->template cast<NewScalar>()), id_,
       scalar_cast<NewScalar>(radius_), pref_.template cast<NewScalar>(), nu_,
       gains_.template cast<NewScalar>(), axis_.template cast<NewScalar>());
+  ret.set_lateral_free(lateral_free_);
   return ret;
 }
 
@@ -244,7 +252,7 @@ template <typename Scalar>
 void ContactModelRollingTpl<Scalar>::print(std::ostream& os) const {
   os << "ContactModelRolling {frame="
      << state_->get_pinocchio()->frames[id_].name << ", radius=" << radius_
-     << "}";
+     << ", lateral_free=" << (lateral_free_ ? "true" : "false") << "}";
 }
 
 template <typename Scalar>
@@ -271,6 +279,11 @@ ContactModelRollingTpl<Scalar>::get_gains() const {
 }
 
 template <typename Scalar>
+bool ContactModelRollingTpl<Scalar>::get_lateral_free() const {
+  return lateral_free_;
+}
+
+template <typename Scalar>
 void ContactModelRollingTpl<Scalar>::set_radius(const Scalar radius) {
   if (radius < Scalar(0.)) {
     throw_pretty("Invalid argument: " << "radius has to be a positive value");
@@ -287,6 +300,11 @@ void ContactModelRollingTpl<Scalar>::set_reference(const SE3& reference) {
 template <typename Scalar>
 void ContactModelRollingTpl<Scalar>::set_axis(const Vector3s& axis) {
   axis_ = axis.normalized();
+}
+
+template <typename Scalar>
+void ContactModelRollingTpl<Scalar>::set_lateral_free(const bool lateral_free) {
+  lateral_free_ = lateral_free;
 }
 
 }  // namespace crocoddyl

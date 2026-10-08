@@ -59,6 +59,17 @@ namespace crocoddyl {
  * The Baumgarte position gain acts on four of these rows only. The
  * \f$\mathbf{b}\f$ translation is skipped, as it is not a holonomic quantity.
  *
+ * The no-slip condition along \f$\mathbf{b}\f$ can be released at run time
+ * with `set_lateral_free()`. Its row of the Jacobian, of the drift and of the
+ * drift derivatives is then zeroed, so that the contact dimension stays
+ * `nc = 5` and the contact can still be switched inside a pool of nodes. With
+ * a nonzero `JMinvJt_damping` of the contact dynamics, a zero row decouples
+ * exactly from the other contact rows and yields \f$f_b = 0\f$. This removes
+ * the redundant constraint of a double support of two legs that cannot
+ * change the lateral distance between their feet, e.g. legs without roll
+ * joints: both lateral no-slip rows would otherwise be linearly dependent and
+ * the internal lateral force would be scaled by the inverse of the damping.
+ *
  * The contact force is stored in `data->f` as a spatial force applied at the
  * contact point and expressed in the support axes, with a zero torque about
  * \f$\mathbf{h}\f$ -- which is exactly what a line contact can transmit. It can
@@ -185,6 +196,12 @@ class ContactModelRollingTpl : public ContactModelAbstractTpl<_Scalar> {
   const Vector2s& get_gains() const;
 
   /**
+   * @brief Return true if the no-slip condition along \f$\mathbf{b}\f$ is
+   * released
+   */
+  bool get_lateral_free() const;
+
+  /**
    * @brief Modify the radius of the cylindrical sole
    */
   void set_radius(const Scalar radius);
@@ -198,6 +215,15 @@ class ContactModelRollingTpl : public ContactModelAbstractTpl<_Scalar> {
    * @brief Modify the rolling axis expressed in the reference frame
    */
   void set_axis(const Vector3s& axis);
+
+  /**
+   * @brief Release or restore the no-slip condition along \f$\mathbf{b}\f$
+   *
+   * A released row is kept in the contact (`nc` does not change) with a zero
+   * Jacobian and drift, so the contact dynamics needs a nonzero
+   * `JMinvJt_damping`.
+   */
+  void set_lateral_free(const bool lateral_free);
 
   /**
    * @brief Print relevant information of the rolling contact model
@@ -219,6 +245,7 @@ class ContactModelRollingTpl : public ContactModelAbstractTpl<_Scalar> {
   Vector3s axis_;   //!< Rolling axis expressed in the reference frame
   Vector2s gains_;  //!< Baumgarte stabilization gains
   Matrix3s sRo_;    //!< Rotation from world to the support frame
+  bool lateral_free_ = false;  //!< Release the no-slip condition along b
 };
 
 template <typename _Scalar>

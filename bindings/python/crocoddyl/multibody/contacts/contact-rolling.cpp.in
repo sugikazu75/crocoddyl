@@ -71,6 +71,11 @@ struct ContactModelRollingVisitor
             bp::make_function(&Model::get_axis,
                               bp::return_value_policy<bp::return_by_value>()),
             &Model::set_axis, "rolling axis in the reference frame")
+        .add_property("lateral_free", &Model::get_lateral_free,
+                      &Model::set_lateral_free,
+                      "release the no-slip condition along the travel "
+                      "direction b (the row is kept with zero Jacobian and "
+                      "drift)")
         .add_property(
             "gains",
             bp::make_function(&Model::get_gains,
