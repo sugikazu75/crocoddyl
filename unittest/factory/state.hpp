@@ -26,6 +26,8 @@ struct StateModelTypes {
     StateMultibody_HyQ,
     StateMultibody_Talos,
     StateMultibody_RandomHumanoid,
+    StateMultibodyWithThrusts_Hector,
+    StateMultibodyWithThrusts_RandomHumanoid,
     NbStateModelTypes
   };
   static std::vector<Type> init_all() {
@@ -40,6 +42,13 @@ struct StateModelTypes {
 };
 
 std::ostream& operator<<(std::ostream& os, StateModelTypes::Type type);
+
+/**
+ * @brief Number of thrusters carried by the state, i.e. `nx - nq - nv`.
+ *
+ * It is zero for every state but the `StateMultibodyWithThrusts` ones.
+ */
+std::size_t get_nthrusters(StateModelTypes::Type state_type);
 
 class StateModelFactory {
  public:

@@ -422,6 +422,11 @@ bool init_function() {
     for (size_t state_type =
              StateModelTypes::all[StateModelTypes::StateMultibody_TalosArm];
          state_type < StateModelTypes::all.size(); ++state_type) {
+      // The factory builds every model on a plain StateMultibody, so the
+      // thrust-augmented states are out of scope here.
+      if (get_nthrusters(StateModelTypes::all[state_type]) != 0) {
+        continue;
+      }
       for (size_t activation_type = 0;
            activation_type < ActivationModelTypes::all.size();
            ++activation_type) {

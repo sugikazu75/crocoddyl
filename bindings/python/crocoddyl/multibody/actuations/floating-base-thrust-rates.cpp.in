@@ -1,0 +1,153 @@
+///////////////////////////////////////////////////////////////////////////////
+// BSD 3-Clause License
+//
+// Copyright (C) 2024-2026, Heriot-Watt University
+// Copyright note valid unless otherwise stated in individual files.
+// All rights reserved.
+///////////////////////////////////////////////////////////////////////////////
+
+// Auto-generated file for @SCALAR_TYPE@
+#include "crocoddyl/multibody/actuations/floating-base-thrust-rates.hpp"
+
+#include "python/crocoddyl/multibody/multibody.hpp"
+#include "python/crocoddyl/utils/vector-converter.hpp"
+
+namespace crocoddyl {
+namespace python {
+
+template <typename Model>
+struct ActuationModelFloatingBaseThrusterRatesVisitor
+    : public bp::def_visitor<
+          ActuationModelFloatingBaseThrusterRatesVisitor<Model>> {
+  typedef typename Model::ActuationDataAbstract Data;
+  typedef typename Model::VectorXs VectorXs;
+  template <class PyClass>
+  void visit(PyClass& cl) const {
+    cl.def("calc",
+           static_cast<void (Model::*)(
+               const std::shared_ptr<Data>&, const Eigen::Ref<const VectorXs>&,
+               const Eigen::Ref<const VectorXs>&)>(&Model::calc),
+           bp::args("self", "data", "x", "u"),
+           "Compute the actuation signal.\n\n"
+           "The thrust forces are read from the state (x[nq+nv:]), while the "
+           "control is u = [thrust rates (nf), joint torques (n_joints)]; the "
+           "thrust-rate block does not contribute to tau.\n"
+           ":param data: floating-base thruster-rates actuation data\n"
+           ":param x: state point (dim. state.nx)\n"
+           ":param u: thrust-rate and joint torque input (dim. nu)")
+        .def("calcDiff", &Model::calcDiff, bp::args("self", "data", "x", "u"),
+             "Compute the derivatives of the actuation model.\n\n"
+             "It assumes that calc has been run first.\n"
+             ":param data: floating-base thruster-rates actuation data\n"
+             ":param x: state point (dim. state.nx)\n"
+             ":param u: thrust-rate and joint torque input (dim. nu)")
+        .def("commands", &Model::commands, bp::args("self", "data", "x", "tau"),
+             "Compute the joint torque commands from the generalized "
+             "torques.\n\n"
+             "The thrust-rate block of data.u is set to zero, as the thrust "
+             "itself is a state.\n"
+             ":param data: actuation data\n"
+             ":param x: state point (dim. state.nx)\n"
+             ":param tau: generalized torques (dim state.nv)")
+        .def("torqueTransform", &Model::torqueTransform,
+             bp::args("self", "data", "x", "tau"),
+             "Compute the torque transform from generalized torques to the "
+             "control inputs.\n\n"
+             "The transform is constant and set in createData, so this "
+             "function does nothing.\n"
+             ":param data: actuation data\n"
+             ":param x: state point (dim. state.nx)\n"
+             ":param tau: generalized torques (dim state.nv)")
+        .def("createData", &Model::createData, bp::args("self"),
+             "Create the floating-base thruster-rates actuation data.")
+        .add_property(
+            "thrusters",
+            bp::make_function(&Model::get_thrusters,
+                              bp::return_value_policy<bp::return_by_value>()),
+            "vector of distributed thrusters")
+        .add_property("nthrusters", bp::make_function(&Model::get_nthrusters),
+                      "number of thrusters (nf)")
+        .add_property("nv_floating",
+                      bp::make_function(&Model::get_nv_floating),
+                      "degrees of freedom of the floating-base joint")
+        .add_property("njoints", bp::make_function(&Model::get_n_joints),
+                      "number of actuated joints (nv - nv_floating)");
+  }
+};
+
+template <typename Data>
+struct ActuationDataFloatingBaseThrusterRatesVisitor
+    : public bp::def_visitor<
+          ActuationDataFloatingBaseThrusterRatesVisitor<Data>> {
+  template <class PyClass>
+  void visit(PyClass& cl) const {
+    cl.add_property(
+          "pinocchio",
+          bp::make_getter(&Data::pinocchio, bp::return_internal_reference<>()),
+          "pinocchio data")
+        .add_property(
+            "W_thrust",
+            bp::make_getter(&Data::W_thrust, bp::return_internal_reference<>()),
+            "matrix mapping from thrusts and joint torques to generalized "
+            "torques")
+        .add_property(
+            "S", bp::make_getter(&Data::S, bp::return_internal_reference<>()),
+            "selection matrix for the under-actuation part");
+  }
+};
+
+#define CROCODDYL_ACTUATION_MODEL_FLOATINGBASE_THRUSTER_RATES_PYTHON_BINDINGS( \
+    Scalar)                                                                    \
+  typedef ActuationModelFloatingBaseThrusterRatesTpl<Scalar> Model;            \
+  typedef ActuationModelAbstractTpl<Scalar> ModelBase;                         \
+  typedef DistributedThrusterTpl<Scalar> Thruster;                             \
+  typedef StateMultibodyWithThrustsTpl<Scalar> StateWithThrusts;               \
+  bp::register_ptr_to_python<std::shared_ptr<Model>>();                        \
+  bp::class_<Model, bp::bases<ModelBase>>(                                     \
+      "ActuationModelFloatingBaseThrusterRates",                               \
+      "Actuation model for floating-base systems whose control is the rate "   \
+      "of change of the thrust.\n\n"                                           \
+      "It is meant to be used with StateMultibodyWithThrusts, which stores "   \
+      "the current thrust f in the state. The control is u = [df (nf), joint " \
+      "torques (nv - nv_floating)] and the generalized torque is tau = "       \
+      "W(q)[:, :nf] * f + W(q)[:, nf:] * tau_joints, i.e. the thrust-rate "    \
+      "block only enters the dynamics through the state integration.",         \
+      bp::init<std::shared_ptr<StateWithThrusts>, std::vector<Thruster>>(      \
+          bp::args("self", "state", "thrusters"),                              \
+          "Initialize the floating-base thruster-rates actuation model.\n\n"   \
+          ":param state: augmented multibody state with thrusts\n"             \
+          ":param thrusters: vector of distributed thrusters"))                \
+      .def(ActuationModelFloatingBaseThrusterRatesVisitor<Model>())            \
+      .def(CastVisitor<Model>())                                               \
+      .def(PrintableVisitor<Model>())                                          \
+      .def(CopyableVisitor<Model>());
+
+#define CROCODDYL_ACTUATION_DATA_FLOATINGBASE_THRUSTER_RATES_PYTHON_BINDINGS( \
+    Scalar)                                                                   \
+  typedef ActuationDataFloatingBaseThrusterRatesTpl<Scalar> Data;             \
+  typedef ActuationDataAbstractTpl<Scalar> DataBase;                          \
+  typedef ActuationModelFloatingBaseThrusterRatesTpl<Scalar> Model;           \
+  bp::register_ptr_to_python<std::shared_ptr<Data>>();                        \
+  bp::class_<Data, bp::bases<DataBase>>(                                      \
+      "ActuationDataFloatingBaseThrusterRates",                               \
+      "Data for the floating-base thruster-rates actuation model.",           \
+      bp::init<Model*>(                                                       \
+          bp::args("self", "model"),                                          \
+          "Create the floating-base thruster-rates actuation data.\n\n"       \
+          ":param model: floating-base thruster-rates actuation model"))      \
+      .def(ActuationDataFloatingBaseThrusterRatesVisitor<Data>())             \
+      .def(CopyableVisitor<Data>());
+
+void exposeActuationFloatingBaseThrusterRates() {
+  {
+    CROCODDYL_ACTUATION_MODEL_FLOATINGBASE_THRUSTER_RATES_PYTHON_BINDINGS(
+        @SCALAR_TYPE@)
+  }
+  {
+    CROCODDYL_ACTUATION_DATA_FLOATINGBASE_THRUSTER_RATES_PYTHON_BINDINGS(
+        @SCALAR_TYPE@)
+  }
+}
+
+}  // namespace python
+}  // namespace crocoddyl

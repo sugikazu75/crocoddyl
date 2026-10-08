@@ -1,0 +1,431 @@
+///////////////////////////////////////////////////////////////////////////////
+// BSD 3-Clause License
+//
+// Copyright (C) 2026, The University of Tokyo
+// Copyright note valid unless otherwise stated in individual files.
+// All rights reserved.
+///////////////////////////////////////////////////////////////////////////////
+
+#ifdef CROCODDYL_WITH_HPIPM
+
+#include "crocoddyl/core/solvers/hpipm-sqp.hpp"
+
+#include "python/crocoddyl/core/core.hpp"
+#include "python/crocoddyl/core/solver-base.hpp"
+
+#define SCALAR_@SCALAR_NAME@
+#define IS_FP_SCALAR_@FP_TYPE@
+
+namespace crocoddyl {
+namespace python {
+
+#ifdef SCALAR_float64
+namespace {
+
+/**
+ * @brief Copy an HPIPM per-iteration record into an Eigen vector
+ *
+ * HPIPM stores its statistics as `std::vector<double>`. Mapping them into
+ * `Eigen::VectorXd` lets Eigenpy expose them as NumPy arrays.
+ */
+Eigen::VectorXd toEigen(const std::vector<double>& v) {
+  return Eigen::Map<const Eigen::VectorXd>(v.data(),
+                                           static_cast<Eigen::Index>(v.size()));
+}
+
+}  // namespace
+
+#define CROCODDYL_HPIPM_STATISTICS_RECORD(name, doc)                       \
+  .add_property(#name,                                                     \
+                bp::make_function(                                         \
+                    +[](const hpipm::OcpQpIpmSolverStatistics& self) {     \
+                      return toEigen(self.name);                           \
+                    }),                                                    \
+                doc)
+
+void exposeHpipmSettings() {
+  bp::enum_<hpipm::HpipmMode>("HpipmMode")
+      .value("SpeedAbs", hpipm::HpipmMode::SpeedAbs)
+      .value("Speed", hpipm::HpipmMode::Speed)
+      .value("Balance", hpipm::HpipmMode::Balance)
+      .value("Robust", hpipm::HpipmMode::Robust)
+      .export_values();
+
+  bp::class_<hpipm::OcpQpIpmSolverSettings>(
+      "HpipmSolverSettings",
+      "Settings of the HPIPM interior-point OCP-QP solver.\n\n"
+      "These settings are forwarded to HPIPM every time they are assigned to "
+      "a SolverHpipmSQP instance (i.e., solver.hpipm_settings = settings).",
+      bp::init<>(bp::args("self"), "Initialize the default HPIPM settings."))
+      .def_readwrite("mode", &hpipm::OcpQpIpmSolverSettings::mode,
+                     "solver mode (default HpipmMode.Speed)")
+      .def_readwrite("iter_max", &hpipm::OcpQpIpmSolverSettings::iter_max,
+                     "maximum number of interior-point iterations, it has to "
+                     "be non-negative (default 15)")
+      .def_readwrite("alpha_min", &hpipm::OcpQpIpmSolverSettings::alpha_min,
+                     "minimum step size, it has to be in (0, 1) (default 1e-8)")
+      .def_readwrite("mu0", &hpipm::OcpQpIpmSolverSettings::mu0,
+                     "initial barrier parameter, it has to be positive "
+                     "(default 1e2)")
+      .def_readwrite("tol_stat", &hpipm::OcpQpIpmSolverSettings::tol_stat,
+                     "convergence tolerance of the stationarity residual, it "
+                     "has to be positive (default 1e-8)")
+      .def_readwrite("tol_eq", &hpipm::OcpQpIpmSolverSettings::tol_eq,
+                     "convergence tolerance of the equality-constraint "
+                     "residual, it has to be positive (default 1e-8)")
+      .def_readwrite("tol_ineq", &hpipm::OcpQpIpmSolverSettings::tol_ineq,
+                     "convergence tolerance of the inequality-constraint "
+                     "residual, it has to be positive (default 1e-8)")
+      .def_readwrite("tol_comp", &hpipm::OcpQpIpmSolverSettings::tol_comp,
+                     "convergence tolerance of the complementarity residual, "
+                     "it has to be positive (default 1e-8)")
+      .def_readwrite("reg_prim", &hpipm::OcpQpIpmSolverSettings::reg_prim,
+                     "primal regularization term, it has to be non-negative "
+                     "(default 1e-12)")
+      .def_readwrite("warm_start", &hpipm::OcpQpIpmSolverSettings::warm_start,
+                     "warm-start flag (0: disable, 1: enable) (default 0)")
+      .def_readwrite("pred_corr", &hpipm::OcpQpIpmSolverSettings::pred_corr,
+                     "prediction-correction flag (0: disable, 1: enable) "
+                     "(default 1)")
+      .def_readwrite("ric_alg", &hpipm::OcpQpIpmSolverSettings::ric_alg,
+                     "square-root Riccati flag (0: disable, 1: enable) "
+                     "(default 1)")
+      .def_readwrite("split_step", &hpipm::OcpQpIpmSolverSettings::split_step,
+                     "flag to use different primal and dual step sizes "
+                     "(0: disable, 1: enable) (default 0)")
+      .def("checkSettings", &hpipm::OcpQpIpmSolverSettings::checkSettings,
+           bp::args("self"),
+           "Check the settings, it raises an exception if something is wrong.")
+      .def(CopyableVisitor<hpipm::OcpQpIpmSolverSettings>());
+
+  bp::class_<hpipm::OcpQpIpmSolverStatistics>(
+      "HpipmSolverStatistics",
+      "Statistics reported by the HPIPM interior-point OCP-QP solver.\n\n"
+      "It contains the residuals reached at the last QP resolution together "
+      "with the per-iteration records of the interior-point method.",
+      bp::init<>(bp::args("self"), "Initialize the HPIPM statistics."))
+      .def_readonly("iter", &hpipm::OcpQpIpmSolverStatistics::iter,
+                    "number of interior-point iterations")
+      .def_readonly("max_res_stat",
+                    &hpipm::OcpQpIpmSolverStatistics::max_res_stat,
+                    "maximum residual of the stationarity condition")
+      .def_readonly("max_res_eq", &hpipm::OcpQpIpmSolverStatistics::max_res_eq,
+                    "maximum residual of the equality constraints")
+      .def_readonly("max_res_ineq",
+                    &hpipm::OcpQpIpmSolverStatistics::max_res_ineq,
+                    "maximum residual of the inequality constraints")
+      .def_readonly("max_res_comp",
+                    &hpipm::OcpQpIpmSolverStatistics::max_res_comp,
+                    "maximum residual of the complementarity condition")
+      // clang-format off
+      CROCODDYL_HPIPM_STATISTICS_RECORD(alpha_aff, "affine step sizes")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(mu_aff, "affine barrier parameters")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(sigma, "centering parameters")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(alpha_prim, "primal step sizes")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(alpha_dual, "dual step sizes")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(mu, "barrier parameters")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(res_stat, "stationarity residuals")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(res_eq, "equality-constraint residuals")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(res_ineq, "inequality-constraint residuals")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(res_comp, "complementarity residuals")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(obj, "objective values")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(lq_fact, "number of LQ factorizations")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(itref_pred, "iterative-refinement steps of the predictor")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(itref_corr, "iterative-refinement steps of the corrector")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(lin_res_stat, "linear-system stationarity residuals")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(lin_res_eq, "linear-system equality-constraint residuals")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(lin_res_ineq, "linear-system inequality-constraint residuals")
+      CROCODDYL_HPIPM_STATISTICS_RECORD(lin_res_comp, "linear-system complementarity residuals")
+      // clang-format on
+      .def(CopyableVisitor<hpipm::OcpQpIpmSolverStatistics>());
+}
+
+#undef CROCODDYL_HPIPM_STATISTICS_RECORD
+#endif
+
+template <typename Model>
+struct SolverHpipmSQPVisitor
+    : public bp::def_visitor<SolverHpipmSQPVisitor<Model>> {
+  using Scalar = typename Model::Scalar;
+  using VectorXs = typename Model::VectorXs;
+  BOOST_PYTHON_FUNCTION_OVERLOADS(SolverHpipmSQP_solves, solve, 1, 6)
+  BOOST_PYTHON_FUNCTION_OVERLOADS(SolverHpipmSQP_trySteps, tryStep, 1, 2)
+  BOOST_PYTHON_FUNCTION_OVERLOADS(SolverHpipmSQP_setCandidate, setCandidate, 1,
+                                  4)
+  template <class PyClass>
+  void visit(PyClass& cl) const {
+    cl.def("solve", &solve,
+           SolverHpipmSQP_solves(
+               bp::args("self", "init_xs", "init_us", "maxiter", "is_feasible",
+                        "init_reg"),
+               "Compute the optimal trajectory xopt, uopt as lists of T+1 and "
+               "T terms.\n\n"
+               "From an initial guess init_xs,init_us (feasible or not), "
+               "iterate over computeDirection and tryStep until "
+               "stoppingCriteria is below threshold. It also describes the "
+               "globalization strategy used during the numerical "
+               "optimization.\n"
+               ":param init_xs: initial guess for state trajectory with T+1 "
+               "elements (default []).\n"
+               ":param init_us: initial guess for control trajectory with T "
+               "elements (default []).\n"
+               ":param maxiter: maximum allowed number of iterations (default "
+               "100).\n"
+               ":param is_feasible: true if the init_xs are obtained from "
+               "integrating the init_us (rollout) (default False).\n"
+               ":param init_reg: initial guess for the regularization value. "
+               "Very low values are typical used with very good guess points "
+               "(default None).\n"
+               ":returns the optimal trajectory xopt, uopt and a boolean that "
+               "describes if convergence was reached."))
+        .def("computeDirection", &Model::computeDirection,
+             (bp::arg("self"), bp::arg("recalc") = true),
+             "Compute the search direction (dx, du) for the current guess "
+             "(xs, us).\n\n"
+             "You must call setCandidate first in order to define the current "
+             "guess. A current guess defines a state and control trajectory "
+             "(xs, us) of T+1 and T elements, respectively. When `recalc` is "
+             "True (the default), the method refreshes the linearization by "
+             "calling calcDir() before building and solving the OCP-QP with "
+             "HPIPM. Setting `recalc=False` reuses the most recent "
+             "derivatives. The resulting state and control variations are "
+             "stored internally (dxs, dus).\n"
+             ":param recalc: request a fresh derivative computation before "
+             "building the search direction (default True).")
+        .def("tryStep", &tryStep,
+             SolverHpipmSQP_trySteps(
+                 bp::args("self", "stepLength"),
+                 "Try a predefined step length and compute its cost and merit "
+                 "improvements.\n\n"
+                 "It uses the search direction found by computeDirection to "
+                 "try a determined step length; so you need to first run "
+                 "computeDirection. Additionally it returns the cost "
+                 "improvement along the predefined step length. Internally, "
+                 "it updates the cost improvement dV and merit improvement "
+                 "dPhi.\n"
+                 ":param stepLength: step length (default 1).\n"
+                 ":returns the cost improvement."))
+        .def("stoppingCriteria", &Model::stoppingCriteria, bp::args("self"),
+             "Return a sum of positive parameters whose sum quantifies the "
+             "SQP termination.")
+        .def("expectedImprovement", &Model::expectedImprovement,
+             bp::args("self"),
+             "Return three scalars denoting the quadratic improvement model\n\n"
+             "For computing the expected improvement, you need to compute "
+             "first the search direction by running computeDirection. The "
+             "quadratic improvement model is described as dV = DV_0 + DV_1 + "
+             "0.5 * DV_2, where DV_0, DV_1, and DV_2 are the constant, "
+             "linear, and quadratic terms, respectively.")
+        .def("computeMeritFunctionImprovement",
+             &Model::computeMeritFunctionImprovement, bp::args("self"),
+             "Compute the merit function improvement for the current step.\n\n"
+             "This function computes the current merit function improvement "
+             "given the current cost improvement and feasibility improvement. "
+             "The feasibility improvement are stored in dfeas.")
+        .def("computeExpectedMeritFunctionImprovement",
+             &Model::computeExpectedMeritFunctionImprovement, bp::args("self"),
+             "Compute the expected merit function improvement for the current "
+             "step.\n\n"
+             "This function computes the expected merit function improvement "
+             "given the expected cost improvement and feasibility "
+             "improvement. The feasibility improvement are stored in dfeas.")
+        .def("updateMeritFunction", &Model::updateMeritFunction,
+             bp::args("self"),
+             "Update the merit function value for the current guess.")
+        .def("checkAcceptance", &Model::checkAcceptance, bp::args("self"),
+             "Check if we should accept or not the step\n\n"
+             ":return True if we should accept the step. False otherwise.")
+        .def("calcDir", &Model::calcDir, bp::args("self"),
+             "Refresh the linearization of the optimal control problem around "
+             "the current candidate.\n\n"
+             "The routine evaluates the cost, dynamics, and constraint models "
+             "along the trajectories stored in xs and us, updating the first- "
+             "and second-order derivatives together with the solver's "
+             "feasibility measures. The main solve loop calls calcDir() "
+             "automatically when a new linearization is required, but the "
+             "method remains available when driving the solver manually (for "
+             "instance before computeDirection(False)).")
+        .def("setCandidate", &setCandidate,
+             SolverHpipmSQP_setCandidate(
+                 bp::args("self", "xs", "us", "isFeasible"),
+                 "Set the solver candidate warm-point values (xs, us).\n\n"
+                 "The solver candidates are defined as a state and control "
+                 "trajectory (xs, us) of T+1 and T elements, respectively. "
+                 "Additionally, we need to specify whether the pair is "
+                 "feasible, i.e., whether integrating us produces xs.\n"
+                 ":param xs: state trajectory of T+1 elements (default []).\n"
+                 ":param us: control trajectory of T elements (default []).\n"
+                 ":param isFeasible: true if xs results from integrating us "
+                 "(rollout)."))
+        .def("computeCandidate", &Model::computeCandidate,
+             (bp::arg("self"), bp::arg("stepLength") = Scalar(1.)),
+             "Compute new candidate trajectories using a predefined step "
+             "length.\n\n"
+             "The method rolls the system forward along the current search "
+             "direction and updates the candidate primal variables so that "
+             "they can be evaluated before acceptance.\n"
+             ":param stepLength: step length (default 1).")
+        .def("updateCandidate", &Model::updateCandidate, bp::args("self"),
+             "Update the candidate solution: cost, feasibilities, and merit "
+             "value.")
+        .def("computeQuadraticModel", &Model::computeQuadraticModel,
+             bp::args("self"),
+             "Build the structured OCP-QP of the optimal control problem.\n\n"
+             "This function fills the HPIPM OCP-QP data (cost Hessians and "
+             "gradients, linearized dynamics, and constraint bounds) from the "
+             "derivatives computed at the current trajectories (xs, us).")
+        .def("solveQuadraticModel", &Model::solveQuadraticModel,
+             bp::args("self"),
+             "Solve the OCP-QP built by computeQuadraticModel with HPIPM.\n\n"
+             ":return True if HPIPM returned a usable solution (i.e., success "
+             "or maximum number of iterations reached). False otherwise.")
+        .def("extractQpDirection", &Model::extractQpDirection,
+             bp::args("self"),
+             "Map the HPIPM solution back into the search direction (dxs, "
+             "dus).\n\n"
+             "It requires a successful solveQuadraticModel call.")
+        .def("increaseRegularizationCriteria",
+             &Model::increaseRegularizationCriteria, bp::args("self"),
+             "Criteria used to increase regularization")
+        .def("decreaseRegularizationCriteria",
+             &Model::decreaseRegularizationCriteria, bp::args("self"),
+             "Criteria used to decrease regularization")
+        .def("increaseRegularization", &Model::increaseRegularization,
+             bp::args("self"),
+             "Increase the state and control regularization values by a "
+             "reg_incFactor.")
+        .def("decreaseRegularization", &Model::decreaseRegularization,
+             bp::args("self"),
+             "Decrease the state and control regularization values by a "
+             "reg_decFactor.")
+        .add_property(
+            "reg_incFactor", bp::make_function(&Model::get_reg_incfactor),
+            bp::make_function(&Model::set_reg_incfactor),
+            "regularization factor used for increasing the damping value.")
+        .add_property(
+            "reg_decFactor", bp::make_function(&Model::get_reg_decfactor),
+            bp::make_function(&Model::set_reg_decfactor),
+            "regularization factor used for decreasing the damping value.")
+        .add_property("th_grad", bp::make_function(&Model::get_th_grad),
+                      bp::make_function(&Model::set_th_grad),
+                      "threshold for accepting step which gradients is lower "
+                      "than this value")
+        .add_property(
+            "th_stepDec", bp::make_function(&Model::get_th_stepdec),
+            bp::make_function(&Model::set_th_stepdec),
+            "threshold for decreasing the regularization after approving a "
+            "step (higher values decreases the regularization)")
+        .add_property(
+            "th_stepInc", bp::make_function(&Model::get_th_stepinc),
+            bp::make_function(&Model::set_th_stepinc),
+            "threshold for increasing the regularization after approving a "
+            "step (higher values decreases the regularization)")
+        .add_property("th_minImprove",
+                      bp::make_function(&Model::get_th_minimprove),
+                      bp::make_function(&Model::set_th_minimprove),
+                      "threshold for minimum improvement used in the "
+                      "regularization scheme")
+        .add_property("th_acceptNegStep",
+                      bp::make_function(&Model::get_th_acceptnegstep),
+                      bp::make_function(&Model::set_th_acceptnegstep),
+                      "threshold for step acceptance in ascent direction")
+        .add_property("th_acceptMinStep",
+                      bp::make_function(&Model::get_th_acceptminstep),
+                      bp::make_function(&Model::set_th_acceptminstep),
+                      "threshold for minimum step acceptance")
+        .add_property("rho", bp::make_function(&Model::get_rho),
+                      bp::make_function(&Model::set_rho),
+                      "parameter used in the merit function to predict the "
+                      "expected reduction.")
+        .add_property("th_minfeas", bp::make_function(&Model::get_th_minfeas),
+                      bp::make_function(&Model::set_th_minfeas),
+                      "threshold to define minimum feasibility.")
+        .add_property(
+            "upsilon", bp::make_function(&Model::get_upsilon),
+            "estimated penalty parameter that balances relative contribution "
+            "of the cost function and equality constraints.")
+        .add_property("upsilon_decFactor",
+                      bp::make_function(&Model::get_upsilon_decfactor),
+                      bp::make_function(&Model::set_upsilon_decfactor),
+                      "threshold for decreasing the penalization that balances "
+                      "optimality and feasibility.")
+        .add_property("zero_upsilon",
+                      bp::make_function(&Model::get_zero_upsilon),
+                      bp::make_function(&Model::set_zero_upsilon),
+                      "True if we set estimated penalty parameter (upsilon) to "
+                      "zero when solve is called.")
+        .add_property(
+            "hpipm_settings",
+            bp::make_function(
+                &Model::get_hpipm_settings,
+                bp::return_value_policy<bp::copy_const_reference>()),
+            bp::make_function(&Model::set_hpipm_settings),
+            "settings of the HPIPM interior-point solver.\n\n"
+            "Note that the getter returns a copy, hence the settings need to "
+            "be assigned back (solver.hpipm_settings = settings) to be "
+            "forwarded to HPIPM.")
+        .add_property(
+            "hpipm_statistics",
+            bp::make_function(
+                &Model::get_hpipm_statistics,
+                bp::return_value_policy<bp::copy_const_reference>()),
+            "statistics reported by HPIPM at the last QP resolution.");
+  }
+  static bool solve(
+      Model& self,
+      const std::vector<VectorXs>& init_xs = DefaultVector<Scalar>::value,
+      const std::vector<VectorXs>& init_us = DefaultVector<Scalar>::value,
+      const std::size_t maxiter = 100, const bool is_feasible = false,
+      const Scalar init_reg = std::numeric_limits<Scalar>::quiet_NaN()) {
+    return self.solve(init_xs, init_us, maxiter, is_feasible, init_reg);
+  }
+  static Scalar tryStep(Model& self, const Scalar step_length = Scalar(1.)) {
+    return self.tryStep(step_length);
+  }
+  static void setCandidate(
+      Model& self,
+      const std::vector<VectorXs>& xs = DefaultVector<Scalar>::value,
+      const std::vector<VectorXs>& us = DefaultVector<Scalar>::value,
+      const bool is_feasible = false) {
+    self.setCandidate(xs, us, is_feasible);
+  }
+};
+
+#define CROCODDYL_SOLVER_HPIPMSQP_PYTHON_BINDINGS(Scalar)                      \
+  typedef SolverHpipmSQPTpl<Scalar> Model;                                     \
+  typedef SolverAbstractTpl<Scalar> ModelBase;                                 \
+  typedef typename ModelBase::ShootingProblem ShootingProblem;                 \
+  bp::register_ptr_to_python<std::shared_ptr<Model>>();                        \
+  bp::class_<Model, bp::bases<ModelBase>>(                                     \
+      "SolverHpipmSQP",                                                        \
+      "HPIPM-based Sequential Quadratic Programming (SQP) solver.\n\n"         \
+      "At each outer SQP iteration, this solver builds a structured OCP-QP "   \
+      "from the Crocoddyl derivatives (computeQuadraticModel) and solves it "  \
+      "with HPIPM's interior-point method (solveQuadraticModel). The "         \
+      "resulting primal solution defines the search direction (dxs, dus), "    \
+      "which is then globalized with a merit-function line search as in the "  \
+      "SQP solver. Note that HPIPM works in double precision only, hence the " \
+      "QP data are cast to double on entry and back on exit.\n"                \
+      ":param shootingProblem: shooting problem (list of action models along " \
+      "the trajectory).",                                                      \
+      bp::init<std::shared_ptr<ShootingProblem>>(                              \
+          bp::args("self", "problem"),                                         \
+          "Initialize the vector dimension.\n\n"                               \
+          ":param problem: shooting problem.\n"))                              \
+      .def(SolverHpipmSQPVisitor<Model>())                                     \
+      .def(CastVisitor<Model, true>())                                         \
+      .def(CopyableVisitor<Model>());
+
+void exposeSolverHpipmSQP() {
+#ifdef SCALAR_float64
+  exposeHpipmSettings();
+#endif
+#ifdef IS_FP_SCALAR_TRUE
+  CROCODDYL_SOLVER_HPIPMSQP_PYTHON_BINDINGS(@SCALAR_TYPE@)
+#endif
+}
+
+}  // namespace python
+}  // namespace crocoddyl
+
+#endif  // CROCODDYL_WITH_HPIPM

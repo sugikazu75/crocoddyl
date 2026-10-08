@@ -1,0 +1,12 @@
+#include "crocoddyl/multibody/actuations/floating-base-distributed-thrusters.hpp"
+
+namespace crocoddyl {
+
+template struct CROCODDYL_EXPLICIT_INSTANTIATION_DEFINITION_DLLAPI
+    DistributedThrusterTpl<@SCALAR_TYPE@>;
+template class CROCODDYL_EXPLICIT_INSTANTIATION_DEFINITION_DLLAPI
+    ActuationModelFloatingBaseDistributedThrustersTpl<@SCALAR_TYPE@>;
+  template struct CROCODDYL_EXPLICIT_INSTANTIATION_DEFINITION_DLLAPI
+    ActuationDataFloatingBaseDistributedThrustersTpl<@SCALAR_TYPE@>;
+
+}  // namespace crocoddyl

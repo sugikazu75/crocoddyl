@@ -1,0 +1,19 @@
+///////////////////////////////////////////////////////////////////////////////
+// BSD 3-Clause License
+//
+// Copyright (C) 2026-2026, The University of Tokyo
+// Copyright note valid unless otherwise stated in individual files.
+// All rights reserved.
+///////////////////////////////////////////////////////////////////////////////
+
+// Auto-generated file for @SCALAR_TYPE@
+#include "crocoddyl/core/residuals/select.hpp"
+
+namespace crocoddyl {
+
+template class CROCODDYL_EXPLICIT_INSTANTIATION_DEFINITION_DLLAPI
+    ResidualModelSelectTpl<@SCALAR_TYPE@>;
+template struct CROCODDYL_EXPLICIT_INSTANTIATION_DEFINITION_DLLAPI
+    ResidualDataSelectTpl<@SCALAR_TYPE@>;
+
+}  // namespace crocoddyl

@@ -1,0 +1,1198 @@
+///////////////////////////////////////////////////////////////////////////////
+// BSD 3-Clause License
+//
+// Copyright (C) 2024-2026, Heriot-Watt University
+// Copyright note valid unless otherwise stated in individual files.
+// All rights reserved.
+///////////////////////////////////////////////////////////////////////////////
+
+#include <pinocchio/algorithm/centroidal.hpp>
+#include <pinocchio/algorithm/compute-all-terms.hpp>
+#include <pinocchio/algorithm/contact-dynamics.hpp>
+#include <pinocchio/algorithm/frames.hpp>
+#include <pinocchio/algorithm/joint-configuration.hpp>
+#include <pinocchio/algorithm/kinematics-derivatives.hpp>
+#include <pinocchio/algorithm/rnea-derivatives.hpp>
+#include <pinocchio/utils/static-if.hpp>
+
+namespace crocoddyl {
+
+template <typename Scalar>
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
+    DifferentialActionModelContactFwdDynamicsWithThrustsTpl(
+        std::shared_ptr<StateWithThrusts> state,
+        std::shared_ptr<ActuationModelAbstract> actuation,
+        std::shared_ptr<ContactModelMultiple> contacts,
+        std::shared_ptr<CostModelSum> costs, const Scalar JMinvJt_damping,
+        const bool enable_force)
+    : Base(state, actuation->get_nu(), costs->get_nr(), 0, 0),
+      actuation_(actuation),
+      contacts_(contacts),
+      costs_(costs),
+      constraints_(nullptr),
+      pinocchio_(state->get_pinocchio().get()),
+      with_armature_(true),
+      armature_(VectorXs::Zero(state->get_nv())),
+      JMinvJt_damping_(fabs(JMinvJt_damping)),
+      enable_force_(enable_force),
+      nf_(state->get_nthrusters()) {
+  init();
+}
+
+template <typename Scalar>
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
+    DifferentialActionModelContactFwdDynamicsWithThrustsTpl(
+        std::shared_ptr<StateWithThrusts> state,
+        std::shared_ptr<ActuationModelAbstract> actuation,
+        std::shared_ptr<ContactModelMultiple> contacts,
+        std::shared_ptr<CostModelSum> costs,
+        std::shared_ptr<ConstraintModelManager> constraints,
+        const Scalar JMinvJt_damping, const bool enable_force)
+    : Base(state, actuation->get_nu(), costs->get_nr(), constraints->get_ng(),
+           constraints->get_nh(), constraints->get_ng_T(),
+           constraints->get_nh_T()),
+      actuation_(actuation),
+      contacts_(contacts),
+      costs_(costs),
+      constraints_(constraints),
+      pinocchio_(state->get_pinocchio().get()),
+      with_armature_(true),
+      armature_(VectorXs::Zero(state->get_nv())),
+      JMinvJt_damping_(fabs(JMinvJt_damping)),
+      enable_force_(enable_force),
+      nf_(state->get_nthrusters()) {
+  init();
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::init() {
+  if (JMinvJt_damping_ < Scalar(0.)) {
+    JMinvJt_damping_ = Scalar(0.);
+    throw_pretty("Invalid argument: "
+                 << "The damping factor has to be positive, set to 0");
+  }
+  if (contacts_->get_nu() != nu_) {
+    throw_pretty(
+        "Invalid argument: "
+        << "Contacts doesn't have the same control dimension (it should be " +
+               std::to_string(nu_) + ")");
+  }
+  if (costs_->get_nu() != nu_) {
+    throw_pretty(
+        "Invalid argument: "
+        << "Costs doesn't have the same control dimension (it should be " +
+               std::to_string(nu_) + ")");
+  }
+  Base::set_u_lb(actuation_->get_u_lb());
+  Base::set_u_ub(actuation_->get_u_ub());
+  robot_only_costs_ = (costs_->get_state()->get_ndx() != state_->get_ndx());
+  thrust_reg_weight_ = VectorXs::Zero(nf_);
+  thrust_barrier_weight_ = VectorXs::Zero(nf_);
+  thrust_lb_ =
+      VectorXs::Constant(nf_, -std::numeric_limits<Scalar>::infinity());
+  thrust_ub_ = VectorXs::Constant(nf_, std::numeric_limits<Scalar>::infinity());
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
+    const std::shared_ptr<DifferentialActionDataAbstract>& data,
+    const Eigen::Ref<const VectorXs>& x, const Eigen::Ref<const VectorXs>& u) {
+  if (static_cast<std::size_t>(x.size()) != state_->get_nx()) {
+    throw_pretty(
+        "Invalid argument: " << "x has wrong dimension (it should be " +
+                                    std::to_string(state_->get_nx()) + ")");
+  }
+  if (static_cast<std::size_t>(u.size()) != nu_) {
+    throw_pretty(
+        "Invalid argument: " << "u has wrong dimension (it should be " +
+                                    std::to_string(nu_) + ")");
+  }
+
+  const std::size_t nq = state_->get_nq();
+  const std::size_t nv = state_->get_nv();
+  const std::size_t nc = contacts_->get_nc();
+
+  Data* d = static_cast<Data*>(data.get());
+  const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic> q =
+      x.head(nq);
+  const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic> v =
+      x.segment(nq, nv);
+
+  // Computing the forward dynamics with the holonomic constraints defined by
+  // the contact model
+  pinocchio::computeAllTerms(*pinocchio_, d->pinocchio, q, v);
+  pinocchio::computeCentroidalMomentum(*pinocchio_, d->pinocchio);
+
+  if (!with_armature_) {
+    d->pinocchio.M.diagonal() += armature_;
+  }
+  actuation_->calc(d->multibody.actuation, x, u);
+  // Contact model uses StateMultibody: pass only the robot-state slice
+  contacts_->calc(d->multibody.contacts, x.head(nq + nv));
+
+#ifndef NDEBUG
+  Eigen::FullPivLU<MatrixXs> Jc_lu(d->multibody.contacts->Jc.topRows(nc));
+  if (Jc_lu.rank() < static_cast<Eigen::Index>(nc) &&
+      JMinvJt_damping_ == Scalar(0.)) {
+    throw_pretty(
+        "A damping factor is needed as the contact Jacobian is not full-rank");
+  }
+#endif
+
+  pinocchio::forwardDynamics(
+      *pinocchio_, d->pinocchio, d->multibody.actuation->tau,
+      d->multibody.contacts->Jc.topRows(nc), d->multibody.contacts->a0.head(nc),
+      JMinvJt_damping_);
+  d->xout = d->pinocchio.ddq;
+  contacts_->updateAcceleration(d->multibody.contacts, d->pinocchio.ddq);
+  contacts_->updateForce(d->multibody.contacts, d->pinocchio.lambda_c);
+  d->multibody.joint->a = d->pinocchio.ddq;
+  d->multibody.joint->tau = u;
+  // When costs use underlying StateMultibody, pass robot-only state slice
+  costs_->calc(d->costs, robot_only_costs_ ? x.head(nq + nv) : x, u);
+  d->cost = d->costs->cost;
+
+  // Thrust regularization: 0.5 * sum_i(w_i * f_i^2)  (f = x.tail(nf_))
+  if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+    d->cost += Scalar(0.5) * thrust_reg_weight_.dot(x.tail(nf_).cwiseAbs2());
+  }
+
+  // Thrust quadratic barrier
+  if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+    d->rlb_min = (x.tail(nf_) - thrust_lb_).array().min(Scalar(0.));
+    d->rub_max = (x.tail(nf_) - thrust_ub_).array().max(Scalar(0.));
+    d->rlb_min *= thrust_barrier_weight_.array();
+    d->rub_max *= thrust_barrier_weight_.array();
+    d->cost += Scalar(0.5) * d->rlb_min.matrix().squaredNorm() +
+               Scalar(0.5) * d->rub_max.matrix().squaredNorm();
+  }
+
+  if (constraints_ != nullptr) {
+    d->constraints->resize(this, d);
+    constraints_->calc(d->constraints, x.head(nq + nv), u);
+  }
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
+    const std::shared_ptr<DifferentialActionDataAbstract>& data,
+    const Eigen::Ref<const VectorXs>& x) {
+  if (static_cast<std::size_t>(x.size()) != state_->get_nx()) {
+    throw_pretty(
+        "Invalid argument: " << "x has wrong dimension (it should be " +
+                                    std::to_string(state_->get_nx()) + ")");
+  }
+
+  Data* d = static_cast<Data*>(data.get());
+  const std::size_t nq = state_->get_nq();
+  const std::size_t nv = state_->get_nv();
+  const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic> q =
+      x.head(nq);
+  const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic> v =
+      x.segment(nq, nv);
+
+  pinocchio::computeAllTerms(*pinocchio_, d->pinocchio, q, v);
+  pinocchio::computeCentroidalMomentum(*pinocchio_, d->pinocchio);
+  costs_->calc(d->costs, robot_only_costs_ ? x.head(nq + nv) : x);
+  d->cost = d->costs->cost;
+
+  if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+    d->cost += Scalar(0.5) * thrust_reg_weight_.dot(x.tail(nf_).cwiseAbs2());
+  }
+
+  if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+    d->rlb_min = (x.tail(nf_) - thrust_lb_).array().min(Scalar(0.));
+    d->rub_max = (x.tail(nf_) - thrust_ub_).array().max(Scalar(0.));
+    d->rlb_min *= thrust_barrier_weight_.array();
+    d->rub_max *= thrust_barrier_weight_.array();
+    d->cost += Scalar(0.5) * d->rlb_min.matrix().squaredNorm() +
+               Scalar(0.5) * d->rub_max.matrix().squaredNorm();
+  }
+
+  if (constraints_ != nullptr) {
+    d->constraints->resize(this, d, false);
+    constraints_->calc(d->constraints, x.head(nq + nv));
+  }
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
+    const std::shared_ptr<DifferentialActionDataAbstract>& data,
+    const Eigen::Ref<const VectorXs>& x, const Eigen::Ref<const VectorXs>& u) {
+  if (static_cast<std::size_t>(x.size()) != state_->get_nx()) {
+    throw_pretty(
+        "Invalid argument: " << "x has wrong dimension (it should be " +
+                                    std::to_string(state_->get_nx()) + ")");
+  }
+  if (static_cast<std::size_t>(u.size()) != nu_) {
+    throw_pretty(
+        "Invalid argument: " << "u has wrong dimension (it should be " +
+                                    std::to_string(nu_) + ")");
+  }
+
+  const std::size_t nq = state_->get_nq();
+  const std::size_t nv = state_->get_nv();
+  const std::size_t nc = contacts_->get_nc();
+  const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic> q =
+      x.head(nq);
+  const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic> v =
+      x.segment(nq, nv);
+
+  Data* d = static_cast<Data*>(data.get());
+
+  // Computing the dynamics derivatives
+  // We resize the Kinv matrix because Eigen cannot call block operations
+  // recursively: https://eigen.tuxfamily.org/bz/show_bug.cgi?id=408. Therefore,
+  // it is not possible to pass d->Kinv.topLeftCorner(nv + nc, nv + nc)
+  d->Kinv.resize(nv + nc, nv + nc);
+  pinocchio::computeRNEADerivatives(*pinocchio_, d->pinocchio, q, v, d->xout,
+                                    d->multibody.contacts->fext);
+  contacts_->updateRneaDiff(d->multibody.contacts, d->pinocchio);
+  pinocchio::getKKTContactDynamicMatrixInverse(
+      *pinocchio_, d->pinocchio, d->multibody.contacts->Jc.topRows(nc),
+      d->Kinv);
+
+  actuation_->calcDiff(d->multibody.actuation, x, u);
+  contacts_->calcDiff(d->multibody.contacts,
+                      x.head(nq + nv));  // Contact model uses StateMultibody:
+                                         // pass only the robot-state slice
+
+  const Eigen::Block<MatrixXs> a_partial_dtau = d->Kinv.topLeftCorner(nv, nv);
+  const Eigen::Block<MatrixXs> a_partial_da = d->Kinv.topRightCorner(nv, nc);
+  const Eigen::Block<MatrixXs> f_partial_dtau =
+      d->Kinv.bottomLeftCorner(nc, nv);
+  const Eigen::Block<MatrixXs> f_partial_da = d->Kinv.bottomRightCorner(nc, nc);
+
+  d->Fx.leftCols(nv).noalias() = -a_partial_dtau * d->pinocchio.dtau_dq;
+  d->Fx.block(0, nv, nv, nv).noalias() = -a_partial_dtau * d->pinocchio.dtau_dv;
+  d->Fx.rightCols(nf_).setZero();
+  d->Fx.leftCols(2 * nv).noalias() -=
+      a_partial_da * d->multibody.contacts->da0_dx.topRows(
+                         nc);  // da0_dx has shape (nc, 2*nv): only affects the
+                               // [q,v] columns of Fx
+  d->Fx.noalias() += a_partial_dtau * d->multibody.actuation->dtau_dx;
+  d->Fu.noalias() = a_partial_dtau * d->multibody.actuation->dtau_du;
+  d->multibody.joint->da_dx = d->Fx;
+  d->multibody.joint->da_du = d->Fu;
+
+  // Computing the cost derivatives
+  if (enable_force_) {
+    d->df_dx.block(0, 0, nc, nv).noalias() =
+        f_partial_dtau * d->pinocchio.dtau_dq;
+    d->df_dx.block(0, nv, nc, nv).noalias() =
+        f_partial_dtau * d->pinocchio.dtau_dv;
+    d->df_dx.rightCols(nf_).setZero();
+    // da0_dx has shape (nc, 2*nv): only affects the [q,v] columns
+    d->df_dx.block(0, 0, nc, 2 * nv).noalias() +=
+        f_partial_da * d->multibody.contacts->da0_dx.topRows(nc);
+    d->df_dx.topRows(nc).noalias() -=
+        f_partial_dtau * d->multibody.actuation->dtau_dx;
+    d->df_du.topRows(nc).noalias() =
+        -f_partial_dtau * d->multibody.actuation->dtau_du;
+    contacts_->updateAccelerationDiff(d->multibody.contacts,
+                                      d->Fx.bottomRows(nv).leftCols(2 * nv));
+    contacts_->updateForceDiff(d->multibody.contacts,
+                               d->df_dx.topRows(nc).leftCols(2 * nv),
+                               d->df_du.topRows(nc));
+  }
+  if (robot_only_costs_) {
+    costs_->calcDiff(d->costs, x.head(nq + nv), u);
+    // Zero-pad cost gradients into the full augmented-state action gradients
+    const std::size_t robot_ndx = costs_->get_state()->get_ndx();
+    d->Lx.head(robot_ndx) = d->costs->Lx;
+    d->Lx.tail(nf_).setZero();
+    d->Lu = d->costs->Lu;
+    d->Lxx.topLeftCorner(robot_ndx, robot_ndx) = d->costs->Lxx;
+    d->Lxx.topRightCorner(robot_ndx, nf_).setZero();
+    d->Lxx.bottomRows(nf_).setZero();
+    d->Lxu.topRows(robot_ndx) = d->costs->Lxu;
+    d->Lxu.bottomRows(nf_).setZero();
+    d->Luu = d->costs->Luu;
+
+    // Thrust regularization gradient: dL/df_i = w_i*f_i, d^2L/df_i^2 = w_i
+    if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          thrust_reg_weight_.array() * x.tail(nf_).array();
+      d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
+          thrust_reg_weight_.array();
+    }
+
+    // Thrust barrier gradient/Hessian
+    if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+      // gradient: (rlb_min + rub_max) * weights  [rlb_min/rub_max already
+      // weighted]
+      d->Lx.tail(nf_).array() +=
+          (d->rlb_min + d->rub_max) * thrust_barrier_weight_.array();
+      using pinocchio::internal::if_then_else;
+      const auto f = x.tail(nf_);
+      const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
+        d->Lxx(k + i, k + i) +=
+            thrust_barrier_weight_[i] *
+            if_then_else(
+                pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
+                Scalar(1.),
+                if_then_else(pinocchio::internal::GE, f[i] - thrust_ub_[i],
+                             Scalar(0.), Scalar(1.), Scalar(0.)));
+      }
+    }
+  } else {
+    costs_->calcDiff(d->costs, x, u);
+
+    // Thrust regularization gradient (non-robot-only path)
+    if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          thrust_reg_weight_.array() * x.tail(nf_).array();
+      d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
+          thrust_reg_weight_.array();
+    }
+
+    // Thrust barrier gradient/Hessian (non-robot-only path)
+    if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          (d->rlb_min + d->rub_max) * thrust_barrier_weight_.array();
+      using pinocchio::internal::if_then_else;
+      const auto f = x.tail(nf_);
+      const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
+        d->Lxx(k + i, k + i) +=
+            thrust_barrier_weight_[i] *
+            if_then_else(
+                pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
+                Scalar(1.),
+                if_then_else(pinocchio::internal::GE, f[i] - thrust_ub_[i],
+                             Scalar(0.), Scalar(1.), Scalar(0.)));
+      }
+    }
+  }
+
+  if (constraints_ != nullptr) {
+    constraints_->calcDiff(d->constraints, x.head(nq + nv), u);
+    d->Gx.rightCols(nf_).setZero();
+    d->Hx.rightCols(nf_).setZero();
+  }
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
+    const std::shared_ptr<DifferentialActionDataAbstract>& data,
+    const Eigen::Ref<const VectorXs>& x) {
+  if (static_cast<std::size_t>(x.size()) != state_->get_nx()) {
+    throw_pretty(
+        "Invalid argument: " << "x has wrong dimension (it should be " +
+                                    std::to_string(state_->get_nx()) + ")");
+  }
+  const std::size_t nq = state_->get_nq();
+  const std::size_t nv = state_->get_nv();
+
+  Data* d = static_cast<Data*>(data.get());
+  if (robot_only_costs_) {
+    costs_->calcDiff(d->costs, x.head(nq + nv));
+    const std::size_t robot_ndx = costs_->get_state()->get_ndx();
+    d->Lx.head(robot_ndx) = d->costs->Lx;
+    d->Lx.tail(nf_).setZero();
+    d->Lxx.topLeftCorner(robot_ndx, robot_ndx) = d->costs->Lxx;
+    d->Lxx.topRightCorner(robot_ndx, nf_).setZero();
+    d->Lxx.bottomRows(nf_).setZero();
+
+    if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          thrust_reg_weight_.array() * x.tail(nf_).array();
+      d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
+          thrust_reg_weight_.array();
+    }
+
+    if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          (d->rlb_min + d->rub_max) * thrust_barrier_weight_.array();
+      using pinocchio::internal::if_then_else;
+      const auto f = x.tail(nf_);
+      const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
+        d->Lxx(k + i, k + i) +=
+            thrust_barrier_weight_[i] *
+            if_then_else(
+                pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
+                Scalar(1.),
+                if_then_else(pinocchio::internal::GE, f[i] - thrust_ub_[i],
+                             Scalar(0.), Scalar(1.), Scalar(0.)));
+      }
+    }
+  } else {
+    costs_->calcDiff(d->costs, x);
+
+    if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          thrust_reg_weight_.array() * x.tail(nf_).array();
+      d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
+          thrust_reg_weight_.array();
+    }
+
+    if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
+      d->Lx.tail(nf_).array() +=
+          (d->rlb_min + d->rub_max) * thrust_barrier_weight_.array();
+      using pinocchio::internal::if_then_else;
+      const auto f = x.tail(nf_);
+      const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
+      for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
+        d->Lxx(k + i, k + i) +=
+            thrust_barrier_weight_[i] *
+            if_then_else(
+                pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
+                Scalar(1.),
+                if_then_else(pinocchio::internal::GE, f[i] - thrust_ub_[i],
+                             Scalar(0.), Scalar(1.), Scalar(0.)));
+      }
+    }
+  }
+  if (constraints_ != nullptr) {
+    constraints_->calcDiff(d->constraints, x.head(nq + nv));
+    d->Gx.rightCols(nf_).setZero();
+    d->Hx.rightCols(nf_).setZero();
+  }
+}
+
+template <typename Scalar>
+std::shared_ptr<DifferentialActionDataAbstractTpl<Scalar>>
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::createData() {
+  return std::allocate_shared<Data>(Eigen::aligned_allocator<Data>(), this);
+}
+
+template <typename Scalar>
+bool DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::checkData(
+    const std::shared_ptr<DifferentialActionDataAbstract>& data) {
+  std::shared_ptr<Data> d = std::dynamic_pointer_cast<Data>(data);
+  return d != nullptr;
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
+    quasiStatic(const std::shared_ptr<DifferentialActionDataAbstract>& data,
+                Eigen::Ref<VectorXs> u, const Eigen::Ref<const VectorXs>& x,
+                std::size_t, Scalar) {
+  if (static_cast<std::size_t>(u.size()) != nu_) {
+    throw_pretty(
+        "Invalid argument: " << "u has wrong dimension (it should be " +
+                                    std::to_string(nu_) + ")");
+  }
+  if (static_cast<std::size_t>(x.size()) != state_->get_nx()) {
+    throw_pretty(
+        "Invalid argument: " << "x has wrong dimension (it should be " +
+                                    std::to_string(state_->get_nx()) + ")");
+  }
+
+  // Static casting the data
+  Data* d = static_cast<Data*>(data.get());
+  const std::size_t nq = state_->get_nq();
+  const std::size_t nv = state_->get_nv();
+  const std::size_t nc = contacts_->get_nc();
+  const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic> q =
+      x.head(nq);
+
+  // Build augmented static state: v = 0, preserve current thrust f
+  d->tmp_xstatic.head(nq) = q;
+  d->tmp_xstatic.segment(nq, nv).setZero();
+  d->tmp_xstatic.tail(nf_) = x.tail(nf_);
+  u.setZero();
+
+  pinocchio::computeAllTerms(*pinocchio_, d->pinocchio, q,
+                             d->tmp_xstatic.segment(nq, nv));
+  pinocchio::computeJointJacobians(*pinocchio_, d->pinocchio, q);
+  pinocchio::rnea(*pinocchio_, d->pinocchio, q, d->tmp_xstatic.segment(nq, nv),
+                  d->tmp_xstatic.segment(nq, nv));
+  actuation_->calc(d->multibody.actuation, d->tmp_xstatic, u);
+  actuation_->calcDiff(d->multibody.actuation, d->tmp_xstatic, u);
+  contacts_->calc(d->multibody.contacts, d->tmp_xstatic.head(nq + nv));
+
+  // Joints must balance: g - W*f = S*tau_joints + Jc^T*lambda
+  // Subtract the thrust contribution already handled by the current state
+  VectorXs tau_residual = d->pinocchio.tau - d->multibody.actuation->tau;
+
+  // Allocates memory
+  d->tmp_Jstatic.conservativeResize(nv, nu_ + nc);
+  d->tmp_Jstatic.leftCols(nu_) = d->multibody.actuation->dtau_du;
+  d->tmp_Jstatic.rightCols(nc) =
+      d->multibody.contacts->Jc.topRows(nc).transpose();
+  u.noalias() = (pseudoInverse(d->tmp_Jstatic) * tau_residual).head(nu_);
+  u.head(nf_).setZero();
+  d->pinocchio.tau.setZero();
+}
+
+template <typename Scalar>
+template <typename NewScalar>
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<NewScalar>
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::cast() const {
+  typedef DifferentialActionModelContactFwdDynamicsWithThrustsTpl<NewScalar>
+      ReturnType;
+  typedef StateMultibodyWithThrustsTpl<NewScalar> StateType;
+  typedef ContactModelMultipleTpl<NewScalar> ContactType;
+  typedef CostModelSumTpl<NewScalar> CostType;
+  typedef ConstraintModelManagerTpl<NewScalar> ConstraintType;
+  if (constraints_) {
+    ReturnType ret(
+        std::static_pointer_cast<StateType>(state_->template cast<NewScalar>()),
+        actuation_->template cast<NewScalar>(),
+        std::make_shared<ContactType>(contacts_->template cast<NewScalar>()),
+        std::make_shared<CostType>(costs_->template cast<NewScalar>()),
+        std::make_shared<ConstraintType>(
+            constraints_->template cast<NewScalar>()),
+        scalar_cast<NewScalar>(JMinvJt_damping_), enable_force_);
+    if (!with_armature_) {
+      ret.set_armature(armature_.template cast<NewScalar>());
+    }
+    ret.set_thrust_reg_weight(thrust_reg_weight_.template cast<NewScalar>());
+    ret.set_thrust_barrier(thrust_barrier_weight_.template cast<NewScalar>(),
+                           thrust_lb_.template cast<NewScalar>(),
+                           thrust_ub_.template cast<NewScalar>());
+    return ret;
+  } else {
+    ReturnType ret(
+        std::static_pointer_cast<StateType>(state_->template cast<NewScalar>()),
+        actuation_->template cast<NewScalar>(),
+        std::make_shared<ContactType>(contacts_->template cast<NewScalar>()),
+        std::make_shared<CostType>(costs_->template cast<NewScalar>()),
+        scalar_cast<NewScalar>(JMinvJt_damping_), enable_force_);
+    if (!with_armature_) {
+      ret.set_armature(armature_.template cast<NewScalar>());
+    }
+    ret.set_thrust_reg_weight(thrust_reg_weight_.template cast<NewScalar>());
+    ret.set_thrust_barrier(thrust_barrier_weight_.template cast<NewScalar>(),
+                           thrust_lb_.template cast<NewScalar>(),
+                           thrust_ub_.template cast<NewScalar>());
+    return ret;
+  }
+}
+
+template <typename Scalar>
+std::size_t DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_ng() const {
+  return constraints_ ? constraints_->get_ng() : Base::get_ng();
+}
+
+template <typename Scalar>
+std::size_t DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_nh() const {
+  return constraints_ ? constraints_->get_nh() : Base::get_nh();
+}
+
+template <typename Scalar>
+std::size_t DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_ng_T() const {
+  return constraints_ ? constraints_->get_ng_T() : Base::get_ng_T();
+}
+
+template <typename Scalar>
+std::size_t DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_nh_T() const {
+  return constraints_ ? constraints_->get_nh_T() : Base::get_nh_T();
+}
+
+template <typename Scalar>
+const typename MathBaseTpl<Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_g_lb()
+    const {
+  return constraints_ ? constraints_->get_lb() : g_lb_;
+}
+
+template <typename Scalar>
+const typename MathBaseTpl<Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_g_ub()
+    const {
+  return constraints_ ? constraints_->get_ub() : g_ub_;
+}
+
+template <typename Scalar>
+const std::shared_ptr<ActuationModelAbstractTpl<Scalar>>&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_actuation()
+    const {
+  return actuation_;
+}
+
+template <typename Scalar>
+const std::shared_ptr<ContactModelMultipleTpl<Scalar>>&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_contacts()
+    const {
+  return contacts_;
+}
+
+template <typename Scalar>
+const std::shared_ptr<CostModelSumTpl<Scalar>>&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_costs()
+    const {
+  return costs_;
+}
+
+template <typename Scalar>
+const std::shared_ptr<ConstraintModelManagerTpl<Scalar>>&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_constraints() const {
+  return constraints_;
+}
+
+template <typename Scalar>
+pinocchio::ModelTpl<Scalar>&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_pinocchio()
+    const {
+  return *pinocchio_;
+}
+
+template <typename Scalar>
+const typename MathBaseTpl<Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_armature()
+    const {
+  return armature_;
+}
+
+template <typename Scalar>
+const Scalar DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_damping_factor() const {
+  return JMinvJt_damping_;
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::set_armature(const VectorXs& armature) {
+  if (static_cast<std::size_t>(armature.size()) != state_->get_nv()) {
+    throw_pretty("Invalid argument: "
+                 << "The armature dimension is wrong (it should be " +
+                        std::to_string(state_->get_nv()) + ")");
+  }
+  armature_ = armature;
+  with_armature_ = false;
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::set_damping_factor(const Scalar damping) {
+  if (damping < 0.) {
+    throw_pretty(
+        "Invalid argument: " << "The damping factor has to be positive");
+  }
+  JMinvJt_damping_ = damping;
+}
+
+template <typename Scalar>
+typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
+    computeEquilibriumThrust(
+        const std::shared_ptr<DifferentialActionDataAbstract>& data,
+        const Eigen::Ref<const VectorXs>& q) {
+  Data* d = static_cast<Data*>(data.get());
+  const std::size_t nq = state_->get_nq();
+  const std::size_t nv = state_->get_nv();
+  const std::size_t nc = contacts_->get_nc();
+  const std::size_t n_joints = nu_ - nf_;
+
+  // Build zero-thrust static state: [q, 0, 0]
+  d->tmp_xstatic.head(nq) = q;
+  d->tmp_xstatic.segment(nq, nv).setZero();
+  d->tmp_xstatic.tail(nf_).setZero();
+  VectorXs u_zero = VectorXs::Zero(nu_);
+
+  // RNEA with v=0, a=0 → d->pinocchio.tau = g (gravity)
+  pinocchio::computeAllTerms(*pinocchio_, d->pinocchio, q,
+                             d->tmp_xstatic.segment(nq, nv));
+  pinocchio::computeJointJacobians(*pinocchio_, d->pinocchio, q);
+  pinocchio::rnea(*pinocchio_, d->pinocchio, q, d->tmp_xstatic.segment(nq, nv),
+                  d->tmp_xstatic.segment(nq, nv));
+  const VectorXs g_tau = d->pinocchio.tau;
+
+  // Actuation derivatives: dtau_dx.rightCols(nf) = W_f(q),
+  //                        dtau_du.rightCols(n_joints) = S
+  actuation_->calc(d->multibody.actuation, d->tmp_xstatic, u_zero);
+  actuation_->calcDiff(d->multibody.actuation, d->tmp_xstatic, u_zero);
+
+  // Contact Jacobians at current q
+  contacts_->calc(d->multibody.contacts, d->tmp_xstatic.head(nq + nv));
+
+  // Build [W_f | S | Jc^T]  (nv × (nf + n_joints + nc))
+  d->tmp_Jstatic.conservativeResize(nv, nu_ + nc);
+  d->tmp_Jstatic.leftCols(nf_) =
+      d->multibody.actuation->dtau_dx.rightCols(nf_);  // W_f(q)
+  d->tmp_Jstatic.middleCols(nf_, n_joints) =
+      d->multibody.actuation->dtau_du.rightCols(n_joints);  // S
+  d->tmp_Jstatic.rightCols(nc).setZero();
+
+  VectorXs lb =
+      VectorXs::Constant(nu_ + nc, -std::numeric_limits<Scalar>::infinity());
+  VectorXs ub =
+      VectorXs::Constant(nu_ + nc, std::numeric_limits<Scalar>::infinity());
+
+  const VectorXs& x_lb = state_->get_lb();
+  const VectorXs& x_ub = state_->get_ub();
+  const std::shared_ptr<ActuationModelFloatingBaseThrusterRatesTpl<Scalar>>
+      thrust_rate_actuation = std::dynamic_pointer_cast<
+          ActuationModelFloatingBaseThrusterRatesTpl<Scalar>>(actuation_);
+  for (std::size_t i = 0; i < nf_; ++i) {
+    lb(i) = std::max(thrust_lb_(i), x_lb(nq + nv + i));
+    ub(i) = std::min(thrust_ub_(i), x_ub(nq + nv + i));
+    if (thrust_rate_actuation != nullptr &&
+        thrust_rate_actuation->get_nthrusters() == nf_) {
+      const DistributedThrusterTpl<Scalar>& thruster =
+          thrust_rate_actuation->get_thrusters()[i];
+      lb(i) = std::max(lb(i), thruster.min_thrust_);
+      ub(i) = std::min(ub(i), thruster.max_thrust_);
+    }
+    if (lb(i) > ub(i)) {
+      throw_pretty(
+          "Invalid argument: " << "The thrust bounds are inconsistent");
+    }
+  }
+
+  // Contact-force decision variables are expressed in LOCAL coordinates.  The
+  // ContactModel may expose Jc in WORLD / LOCAL_WORLD_ALIGNED, so rotate those
+  // Jacobian blocks back to LOCAL before applying the normal-force bound.
+  std::size_t contact_offset = 0;
+  typename ContactModelMultiple::ContactModelContainer::const_iterator it, end;
+  for (it = contacts_->get_contacts().begin(),
+      end = contacts_->get_contacts().end();
+       it != end; ++it) {
+    const std::shared_ptr<typename ContactModelMultiple::ContactItem>& item =
+        it->second;
+    if (!item->active) {
+      continue;
+    }
+    const std::size_t nc_i = item->contact->get_nc();
+    Eigen::Block<MatrixXs> Jc_i =
+        d->multibody.contacts->Jc.block(contact_offset, 0, nc_i, nv);
+    Eigen::Block<MatrixXs> Jstatic_i =
+        d->tmp_Jstatic.block(0, nu_ + contact_offset, nv, nc_i);
+
+    if (item->contact->get_type() == pinocchio::ReferenceFrame::LOCAL ||
+        nc_i == 2) {
+      Jstatic_i.noalias() = Jc_i.transpose();
+    } else if (nc_i == 3 || nc_i == 6) {
+      const Eigen::Ref<const typename MathBase::Matrix3s> oRf =
+          d->pinocchio.oMf[item->contact->get_id()].rotation();
+      MatrixXs Jc_local = MatrixXs::Zero(nc_i, nv);
+      Jc_local.template topRows<3>().noalias() =
+          oRf.transpose() * Jc_i.template topRows<3>();
+      if (nc_i == 6) {
+        Jc_local.template bottomRows<3>().noalias() =
+            oRf.transpose() * Jc_i.template bottomRows<3>();
+      }
+      Jstatic_i.noalias() = Jc_local.transpose();
+    } else {
+      Jstatic_i.noalias() = Jc_i.transpose();
+    }
+
+    if (nc_i > 0) {
+      const std::size_t normal_id = nc_i == 1 ? 0 : (nc_i == 2 ? 1 : 2);
+      lb(nu_ + contact_offset + normal_id) = Scalar(0.);
+    }
+    contact_offset += nc_i;
+  }
+
+  // Weighted minimum-norm static solution.  Thrust is more expensive than joint
+  // torques/contact forces, so ground support is used before thrust, while a
+  // ceiling contact cannot pull because of the normal-force lower bound above.
+  const std::size_t nz = nu_ + nc;
+  VectorXs weights = VectorXs::Constant(nz, Scalar(1.));
+  VectorXs inv_weights = weights.cwiseInverse();
+  VectorXs sol = VectorXs::Zero(nz);
+  VectorXs fixed = VectorXs::Zero(nz);
+  VectorXs mu = VectorXs::Zero(nv);
+  std::vector<int> active_bound(nz, 0);  // -1: lower, +1: upper, 0: free
+  const Scalar bound_tol = ScaleNumerics<Scalar>(1e-9);
+  const Scalar eq_tol = ScaleNumerics<Scalar>(1e-8);
+  bool converged = false;
+
+  for (std::size_t iter = 0; iter <= 4 * nz + 10; ++iter) {
+    std::vector<std::size_t> free_ids;
+    free_ids.reserve(nz);
+    VectorXs rhs = g_tau;
+    for (std::size_t i = 0; i < nz; ++i) {
+      if (active_bound[i] != 0) {
+        fixed(i) = active_bound[i] < 0 ? lb(i) : ub(i);
+        rhs.noalias() -= d->tmp_Jstatic.col(i) * fixed(i);
+        sol(i) = fixed(i);
+      } else {
+        free_ids.push_back(i);
+      }
+    }
+
+    const std::size_t nfree = free_ids.size();
+    if (nfree > 0) {
+      MatrixXs AWinvAt = MatrixXs::Zero(nv, nv);
+      for (std::size_t j = 0; j < nfree; ++j) {
+        const std::size_t id = free_ids[j];
+        AWinvAt.noalias() += inv_weights(id) * d->tmp_Jstatic.col(id) *
+                             d->tmp_Jstatic.col(id).transpose();
+      }
+      mu.noalias() = -pseudoInverse(AWinvAt) * rhs;
+      for (std::size_t j = 0; j < nfree; ++j) {
+        const std::size_t id = free_ids[j];
+        sol(id) = -inv_weights(id) * d->tmp_Jstatic.col(id).dot(mu);
+      }
+    } else {
+      mu.setZero();
+    }
+
+    std::size_t worst_id = nz;
+    Scalar worst_violation = Scalar(0.);
+    int worst_bound = 0;
+    for (std::size_t j = 0; j < nfree; ++j) {
+      const std::size_t id = free_ids[j];
+      if (sol(id) < lb(id) - bound_tol) {
+        const Scalar violation = lb(id) - sol(id);
+        if (violation > worst_violation) {
+          worst_violation = violation;
+          worst_id = id;
+          worst_bound = -1;
+        }
+      } else if (sol(id) > ub(id) + bound_tol) {
+        const Scalar violation = sol(id) - ub(id);
+        if (violation > worst_violation) {
+          worst_violation = violation;
+          worst_id = id;
+          worst_bound = 1;
+        }
+      }
+    }
+    if (worst_id != nz) {
+      active_bound[worst_id] = worst_bound;
+      continue;
+    }
+
+    if ((d->tmp_Jstatic * sol - g_tau).norm() >
+        eq_tol * std::max(Scalar(1.), g_tau.norm())) {
+      throw_pretty("Runtime error: "
+                   << "No feasible bounded static equilibrium was found");
+    }
+
+    VectorXs gradient = weights.cwiseProduct(sol);
+    gradient.noalias() += d->tmp_Jstatic.transpose() * mu;
+    worst_id = nz;
+    worst_violation = Scalar(0.);
+    for (std::size_t i = 0; i < nz; ++i) {
+      if (active_bound[i] == 0) {
+        continue;
+      }
+      const Scalar violation = active_bound[i] < 0 ? -gradient(i) : gradient(i);
+      if (violation > worst_violation + bound_tol) {
+        worst_violation = violation;
+        worst_id = i;
+      }
+    }
+    if (worst_id != nz) {
+      active_bound[worst_id] = 0;
+    } else {
+      converged = true;
+      break;
+    }
+  }
+
+  if (!converged) {
+    throw_pretty("Runtime error: "
+                 << "The bounded static equilibrium QP did not converge");
+  }
+
+  d->pinocchio.tau.setZero();
+  return sol.head(nf_);
+}
+
+template <typename Scalar>
+std::size_t DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_nf() const {
+  return nf_;
+}
+
+template <typename Scalar>
+const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_thrust_reg_weight() const {
+  return thrust_reg_weight_;
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::set_thrust_reg_weight(const VectorXs& weight) {
+  if (static_cast<std::size_t>(weight.size()) != nf_) {
+    throw_pretty("Invalid argument: " << "thrust_reg_weight must have size nf="
+                                      << nf_);
+  }
+  if ((weight.array() < Scalar(0.)).any()) {
+    throw_pretty("Invalid argument: "
+                 << "thrust_reg_weight elements must be non-negative");
+  }
+  thrust_reg_weight_ = weight;
+}
+
+template <typename Scalar>
+const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_thrust_barrier_weight() const {
+  return thrust_barrier_weight_;
+}
+
+template <typename Scalar>
+const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_thrust_lb()
+    const {
+  return thrust_lb_;
+}
+
+template <typename Scalar>
+const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::get_thrust_ub()
+    const {
+  return thrust_ub_;
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::set_thrust_barrier(const VectorXs& weight, const VectorXs& lb,
+                                const VectorXs& ub) {
+  if (static_cast<std::size_t>(weight.size()) != nf_ ||
+      static_cast<std::size_t>(lb.size()) != nf_ ||
+      static_cast<std::size_t>(ub.size()) != nf_) {
+    throw_pretty("Invalid argument: " << "weight, lb, ub must all have size nf="
+                                      << nf_);
+  }
+  if ((weight.array() < Scalar(0.)).any()) {
+    throw_pretty("Invalid argument: "
+                 << "thrust_barrier_weight elements must be non-negative");
+  }
+  if ((lb.array() > ub.array()).any()) {
+    throw_pretty(
+        "Invalid argument: " << "thrust lower bound must be <= upper bound");
+  }
+  thrust_barrier_weight_ = weight;
+  thrust_lb_ = lb;
+  thrust_ub_ = ub;
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::print(
+    std::ostream& os) const {
+  os << "DifferentialActionModelContactFwdDynamicsWithThrusts {nx="
+     << state_->get_nx() << ", ndx=" << state_->get_ndx() << ", nu=" << nu_
+     << ", nf=" << nf_ << ", nc=" << contacts_->get_nc() << "}";
+}
+
+template <typename Scalar>
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::
+    IntegratedActionModelEulerWithThrustsTpl(
+        std::shared_ptr<DifferentialModel> model, const Scalar time_step)
+    : Base(model->get_state(), model->get_nu(), model->get_nr(),
+           model->get_ng(), model->get_nh(), model->get_ng_T(),
+           model->get_nh_T()),
+      differential_(model),
+      dt_(time_step),
+      dt2_(time_step * time_step),
+      nv_(model->get_state()->get_nv()),
+      nf_(std::static_pointer_cast<StateMultibodyWithThrustsTpl<Scalar>>(
+              model->get_state())
+              ->get_nthrusters()) {
+  Base::set_u_lb(model->get_u_lb());
+  Base::set_u_ub(model->get_u_ub());
+}
+
+template <typename Scalar>
+void IntegratedActionModelEulerWithThrustsTpl<Scalar>::calc(
+    const std::shared_ptr<ActionDataAbstract>& data,
+    const Eigen::Ref<const VectorXs>& x, const Eigen::Ref<const VectorXs>& u) {
+  if (static_cast<std::size_t>(x.size()) != state_->get_nx()) {
+    throw_pretty(
+        "Invalid argument: " << "x has wrong dimension (it should be " +
+                                    std::to_string(state_->get_nx()) + ")");
+  }
+  if (static_cast<std::size_t>(u.size()) != nu_) {
+    throw_pretty(
+        "Invalid argument: " << "u has wrong dimension (it should be " +
+                                    std::to_string(nu_) + ")");
+  }
+
+  Data* d = static_cast<Data*>(data.get());
+  differential_->calc(d->differential, x, u);
+
+  const std::size_t nq = state_->get_nq();
+  const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic> v =
+      x.segment(nq, nv_);
+  const Eigen::VectorBlock<const Eigen::Ref<const VectorXs>, Eigen::Dynamic>
+      df = u.head(nf_);
+  const VectorXs& vdot = d->differential->xout;
+
+  d->dx.head(nv_).noalias() = v * dt_ + vdot * dt2_;
+  d->dx.segment(nv_, nv_).noalias() = vdot * dt_;
+  d->dx.tail(nf_).noalias() = df * dt_;
+
+  state_->integrate(x, d->dx, d->xnext);
+  d->cost = dt_ * d->differential->cost;
+  d->g = d->differential->g;
+  d->h = d->differential->h;
+}
+
+template <typename Scalar>
+void IntegratedActionModelEulerWithThrustsTpl<Scalar>::calc(
+    const std::shared_ptr<ActionDataAbstract>& data,
+    const Eigen::Ref<const VectorXs>& x) {
+  if (static_cast<std::size_t>(x.size()) != state_->get_nx()) {
+    throw_pretty(
+        "Invalid argument: " << "x has wrong dimension (it should be " +
+                                    std::to_string(state_->get_nx()) + ")");
+  }
+
+  Data* d = static_cast<Data*>(data.get());
+  differential_->calc(d->differential, x);
+  d->dx.setZero();
+  d->xnext = x;
+  d->cost = d->differential->cost;
+  d->g = d->differential->g;
+  d->h = d->differential->h;
+}
+
+template <typename Scalar>
+void IntegratedActionModelEulerWithThrustsTpl<Scalar>::calcDiff(
+    const std::shared_ptr<ActionDataAbstract>& data,
+    const Eigen::Ref<const VectorXs>& x, const Eigen::Ref<const VectorXs>& u) {
+  if (static_cast<std::size_t>(x.size()) != state_->get_nx()) {
+    throw_pretty(
+        "Invalid argument: " << "x has wrong dimension (it should be " +
+                                    std::to_string(state_->get_nx()) + ")");
+  }
+  if (static_cast<std::size_t>(u.size()) != nu_) {
+    throw_pretty(
+        "Invalid argument: " << "u has wrong dimension (it should be " +
+                                    std::to_string(nu_) + ")");
+  }
+
+  Data* d = static_cast<Data*>(data.get());
+  differential_->calcDiff(d->differential, x, u);
+
+  const MatrixXs& da_dx = d->differential->Fx;
+  const MatrixXs& da_du = d->differential->Fu;
+  const std::size_t ndx = state_->get_ndx();
+
+  d->Fx_tmp.setZero();
+  d->Fx_tmp.topRows(nv_).noalias() = da_dx * dt2_;
+  d->Fx_tmp.block(0, nv_, nv_, nv_).diagonal().array() += Scalar(dt_);
+  d->Fx_tmp.block(nv_, 0, nv_, ndx).noalias() = da_dx * dt_;
+
+  d->Fu_tmp.setZero();
+  d->Fu_tmp.topRows(nv_).noalias() = da_du * dt2_;
+  d->Fu_tmp.block(nv_, 0, nv_, nu_).noalias() = da_du * dt_;
+  d->Fu_tmp.block(2 * nv_, 0, nf_, nf_).diagonal().array() = Scalar(dt_);
+
+  state_->JintegrateTransport(x, d->dx, d->Fx_tmp, second);
+  state_->Jintegrate(x, d->dx, d->Fx_tmp, d->Fx_tmp, first, addto);
+  d->Fx = d->Fx_tmp;
+
+  state_->JintegrateTransport(x, d->dx, d->Fu_tmp, second);
+  d->Fu = d->Fu_tmp;
+
+  d->Lx.noalias() = dt_ * d->differential->Lx;
+  d->Lu.noalias() = dt_ * d->differential->Lu;
+  d->Lxx.noalias() = dt_ * d->differential->Lxx;
+  d->Lxu.noalias() = dt_ * d->differential->Lxu;
+  d->Luu.noalias() = dt_ * d->differential->Luu;
+  d->Gx = d->differential->Gx;
+  d->Hx = d->differential->Hx;
+  d->Gu = d->differential->Gu;
+  d->Hu = d->differential->Hu;
+}
+
+template <typename Scalar>
+void IntegratedActionModelEulerWithThrustsTpl<Scalar>::calcDiff(
+    const std::shared_ptr<ActionDataAbstract>& data,
+    const Eigen::Ref<const VectorXs>& x) {
+  if (static_cast<std::size_t>(x.size()) != state_->get_nx()) {
+    throw_pretty(
+        "Invalid argument: " << "x has wrong dimension (it should be " +
+                                    std::to_string(state_->get_nx()) + ")");
+  }
+  Data* d = static_cast<Data*>(data.get());
+  differential_->calcDiff(d->differential, x);
+  state_->Jintegrate(x, d->dx, d->Fx_tmp, d->Fx_tmp);
+  d->Fx = d->Fx_tmp;
+  d->Lx = d->differential->Lx;
+  d->Lxx = d->differential->Lxx;
+  d->Gx = d->differential->Gx;
+  d->Hx = d->differential->Hx;
+}
+
+template <typename Scalar>
+std::shared_ptr<ActionDataAbstractTpl<Scalar>>
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::createData() {
+  return std::allocate_shared<Data>(Eigen::aligned_allocator<Data>(), this);
+}
+
+template <typename Scalar>
+bool IntegratedActionModelEulerWithThrustsTpl<Scalar>::checkData(
+    const std::shared_ptr<ActionDataAbstract>& data) {
+  std::shared_ptr<Data> d = std::dynamic_pointer_cast<Data>(data);
+  return d != nullptr;
+}
+
+template <typename Scalar>
+void IntegratedActionModelEulerWithThrustsTpl<Scalar>::quasiStatic(
+    const std::shared_ptr<ActionDataAbstract>& data, Eigen::Ref<VectorXs> u,
+    const Eigen::Ref<const VectorXs>& x, const std::size_t, const Scalar) {
+  Data* d = static_cast<Data*>(data.get());
+  differential_->quasiStatic(d->differential, u, x);
+}
+
+template <typename Scalar>
+template <typename NewScalar>
+IntegratedActionModelEulerWithThrustsTpl<NewScalar>
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::cast() const {
+  typedef IntegratedActionModelEulerWithThrustsTpl<NewScalar> ReturnType;
+  typedef DifferentialActionModelContactFwdDynamicsWithThrustsTpl<NewScalar>
+      DiffType;
+  ReturnType ret(
+      std::make_shared<DiffType>(differential_->template cast<NewScalar>()),
+      scalar_cast<NewScalar>(dt_));
+  return ret;
+}
+
+template <typename Scalar>
+const std::shared_ptr<
+    DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>>&
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_differential() const {
+  return differential_;
+}
+
+template <typename Scalar>
+Scalar IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_dt() const {
+  return dt_;
+}
+
+template <typename Scalar>
+void IntegratedActionModelEulerWithThrustsTpl<Scalar>::set_dt(const Scalar dt) {
+  dt_ = dt;
+  dt2_ = dt * dt;
+}
+
+template <typename Scalar>
+std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_ng() const {
+  return differential_->get_ng();
+}
+
+template <typename Scalar>
+std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_nh() const {
+  return differential_->get_nh();
+}
+
+template <typename Scalar>
+std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_ng_T() const {
+  return differential_->get_ng_T();
+}
+
+template <typename Scalar>
+std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_nh_T() const {
+  return differential_->get_nh_T();
+}
+
+template <typename Scalar>
+void IntegratedActionModelEulerWithThrustsTpl<Scalar>::print(
+    std::ostream& os) const {
+  os << "IntegratedActionModelEulerWithThrusts {dt=" << dt_ << ", "
+     << *differential_ << "}";
+}
+
+}  // namespace crocoddyl

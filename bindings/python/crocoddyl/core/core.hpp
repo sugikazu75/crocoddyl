@@ -41,6 +41,7 @@ void exposeIntegratedActionEuler();
 void exposeIntegratedActionRK();
 void exposeCostAbstract();
 void exposeResidualControl();
+void exposeResidualSelect();
 void exposeResidualJointEffort();
 void exposeResidualJointAcceleration();
 void exposeResidualTaskFirstOrder();
@@ -83,6 +84,9 @@ void exposeSolverBoxQP();
 void exposeSolverBoxDDP();
 void exposeSolverBoxFDDP();
 void exposeSolverIntro();
+#ifdef CROCODDYL_WITH_HPIPM
+void exposeSolverHpipmSQP();
+#endif
 #ifdef CROCODDYL_WITH_IPOPT
 void exposeSolverIpopt();
 #endif

@@ -21,6 +21,8 @@ struct ActuationModelTypes {
     ActuationModelFull,
     ActuationModelFloatingBase,
     ActuationModelFloatingBaseThrusters,
+    ActuationModelFloatingBaseDistributedThrusters,
+    ActuationModelFloatingBaseThrusterRates,
     ActuationModelSquashingFull,
     NbActuationModelTypes
   };
@@ -36,6 +38,28 @@ struct ActuationModelTypes {
 };
 
 std::ostream& operator<<(std::ostream& os, ActuationModelTypes::Type type);
+
+/**
+ * @brief True for actuation models that need a floating-base robot.
+ *
+ * They compute their control dimension from the root joint, so a fixed-base
+ * model (e.g. TalosArm) is not a valid pairing.
+ */
+bool requires_floating_base(ActuationModelTypes::Type actuation_type);
+
+/**
+ * @brief True for actuation models that need a `StateMultibodyWithThrusts`.
+ *
+ * These read the current thrust from the state, so a plain `StateMultibody`
+ * is not a valid pairing.
+ */
+bool requires_thrust_state(ActuationModelTypes::Type actuation_type);
+
+/**
+ * @brief True when the actuation model can be built on top of the given state.
+ */
+bool are_compatible(StateModelTypes::Type state_type,
+                    ActuationModelTypes::Type actuation_type);
 
 class ActuationModelFactory {
  public:
