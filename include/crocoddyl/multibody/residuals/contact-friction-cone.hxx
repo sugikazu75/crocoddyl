@@ -103,6 +103,7 @@ void ResidualModelContactFrictionConeTpl<Scalar>::updateJacobians(
   const MatrixXs& df_dx = d->contact->df_dx;
   const MatrixXs& df_du = d->contact->df_du;
   const MatrixX3s& A = fref_.get_A();
+  data->Rx.resize(A.rows(), df_dx.cols());
   switch (d->contact_type) {
     case Contact2D: {
       // Valid for xz plane
