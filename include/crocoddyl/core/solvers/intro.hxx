@@ -13,7 +13,9 @@ SolverIntroTpl<Scalar>::SolverIntroTpl(std::shared_ptr<ShootingProblem> problem,
                                        const DynamicsSolverType dyn_solver,
                                        const EqualitySolverType eq_solver,
                                        const EqualitySolverType term_solver)
-    : SolverFDDP(problem, dyn_solver, term_solver), eq_solver_(eq_solver) {
+    : SolverFDDP(problem, dyn_solver, term_solver),
+      eq_solver_(eq_solver),
+      rank_deficiency_warned_(false) {
   allocateData();
 }
 
@@ -30,6 +32,7 @@ void SolverIntroTpl<Scalar>::resizeRunningData() {
     const std::size_t nu = model->get_nu();
     const std::size_t nh = model->get_nh();
     KQuu_2Qxu_[t].conservativeResize(ndx, nu);
+    Hu_rows_[t].resize(nh);
     YZ_[t].conservativeResize(nu, nu);
     Hy_[t].conservativeResize(nh, nh);
     Qz_[t].conservativeResize(nh);
@@ -166,6 +169,7 @@ void SolverIntroTpl<Scalar>::allocateData() {
   const std::size_t ndx = problem_->get_ndx();
   const std::size_t T = problem_->get_T();
   Hu_rank_.resize(T);
+  Hu_rows_.resize(T);
   KQuu_2Qxu_.resize(T);
   YZ_.resize(T);
   Hy_.resize(T);
@@ -189,6 +193,7 @@ void SolverIntroTpl<Scalar>::allocateData() {
     const std::size_t nu = model->get_nu();
     const std::size_t nh = model->get_nh();
     Hu_rank_[t] = nh;
+    Hu_rows_[t].resize(nh);
     KQuu_2Qxu_[t] = MatrixXsRowMajor::Zero(ndx, nu);
     YZ_[t] = MatrixXs::Zero(nu, nu);
     Hy_[t] = MatrixXs::Zero(nh, nh);
@@ -237,23 +242,28 @@ void SolverIntroTpl<Scalar>::calcLuNullDir() {
     const std::shared_ptr<ActionDataAbstract>& data = datas[t];
     if (model->get_nu() > 0 && model->get_nh() > 0) {
       Hu_lu_[t].compute(data->Hu);
-      Hu_rank_[t] = Hu_lu_[t].rank();
-      YZ_[t].leftCols(Hu_rank_[t]).noalias() =
-          (Hu_lu_[t].permutationP() * data->Hu).transpose();
-      YZ_[t].rightCols(model->get_nu() - Hu_rank_[t]) = Hu_lu_[t].kernel();
-      const Eigen::Block<MatrixXs, Eigen::Dynamic, Eigen::Dynamic,
-                         Eigen::RowMajor>
-          Y = YZ_[t].leftCols(Hu_lu_[t].rank());
-      Hy_[t].noalias() = data->Hu * Y;
-      Hy_lu_[t].compute(Hy_[t]);
-      const Eigen::Inverse<Eigen::PartialPivLU<MatrixXs> > Hy_inv =
-          Hy_lu_[t].inverse();
-      ks_[t].noalias() = Hy_inv * data->h;
-      Ks_[t].noalias() = Hy_inv * data->Hx;
-      kz_[t].noalias() = Y * ks_[t];
-      Kz_[t].noalias() = Y * Ks_[t];
+      const std::size_t rank = Hu_lu_[t].rank();
+      Hu_rank_[t] = rank;
+      // P*Hu*Q = L*U, so the first rank rows of P*Hu are linearly independent
+      // and span the rows of Hu. Their transposes form the span Y.
+      const typename Eigen::FullPivLU<MatrixXs>::PermutationPType::IndicesType&
+          P = Hu_lu_[t].permutationP().indices();
+      for (std::size_t j = 0; j < static_cast<std::size_t>(P.size()); ++j) {
+        const std::size_t i = static_cast<std::size_t>(P(j));  // row of P*Hu
+        if (i < rank) {
+          Hu_rows_[t][i] = j;
+        }
+      }
+      if (model->get_nu() > rank) {  // kernel() is a zero column otherwise
+        YZ_[t].rightCols(model->get_nu() - rank) = Hu_lu_[t].kernel();
+      }
+      for (std::size_t i = 0; i < rank; ++i) {
+        YZ_[t].col(i) = data->Hu.row(Hu_rows_[t][i]).transpose();
+      }
+      computeSpaceDir(t, data);
     }
   }
+  checkRankDeficiency();
   STOP_PROFILER("SolverIntro::calcLuNullDir");
 }
 
@@ -274,21 +284,77 @@ void SolverIntroTpl<Scalar>::calcQrNullDir() {
     if (model->get_nu() > 0 && model->get_nh() > 0) {
       Hu_qr_[t].compute(data->Hu.transpose());
       YZ_[t] = Hu_qr_[t].householderQ();
-      Hu_rank_[t] = Hu_qr_[t].rank();
-      const Eigen::Block<MatrixXs, Eigen::Dynamic, Eigen::Dynamic,
-                         Eigen::RowMajor>
-          Y = YZ_[t].leftCols(Hu_qr_[t].rank());
-      Hy_[t].noalias() = data->Hu * Y;
-      Hy_lu_[t].compute(Hy_[t]);
-      const Eigen::Inverse<Eigen::PartialPivLU<MatrixXs> > Hy_inv =
-          Hy_lu_[t].inverse();
-      ks_[t].noalias() = Hy_inv * data->h;
-      Ks_[t].noalias() = Hy_inv * data->Hx;
-      kz_[t].noalias() = Y * ks_[t];
-      Kz_[t].noalias() = Y * Ks_[t];
+      const std::size_t rank = Hu_qr_[t].rank();
+      Hu_rank_[t] = rank;
+      // Hu^T*Pi = Q*R, so the first rank pivot columns of Hu^T (i.e. rows of
+      // Hu) are linearly independent, and the first rank columns of Q are
+      // the span Y
+      const typename Eigen::ColPivHouseholderQR<
+          MatrixXs>::PermutationType::IndicesType& Pi =
+          Hu_qr_[t].colsPermutation().indices();
+      for (std::size_t i = 0; i < rank; ++i) {
+        Hu_rows_[t][i] = static_cast<std::size_t>(Pi(i));
+      }
+      computeSpaceDir(t, data);
     }
   }
+  checkRankDeficiency();
   STOP_PROFILER("SolverIntro::calcQrNullDir");
+}
+
+template <typename Scalar>
+void SolverIntroTpl<Scalar>::computeSpaceDir(
+    const std::size_t t, const std::shared_ptr<ActionDataAbstract>& data) {
+  const std::size_t rank = Hu_rank_[t];
+  if (rank == 0) {
+    kz_[t].setZero();
+    Kz_[t].setZero();
+    ks_[t].setZero();
+    Ks_[t].setZero();
+    return;
+  }
+  const Eigen::Block<MatrixXs, Eigen::Dynamic, Eigen::Dynamic, true> Y =
+      YZ_[t].leftCols(rank);
+  // Hy = Hu_r*Y, with Hu_r the independent rows of Hu (square and invertible)
+  Eigen::Block<MatrixXs> Hy = Hy_[t].topLeftCorner(rank, rank);
+  Eigen::VectorBlock<VectorXs> ks = ks_[t].head(rank);
+  Eigen::Block<MatrixXs> Ks = Ks_[t].topRows(rank);
+  for (std::size_t i = 0; i < rank; ++i) {
+    const std::size_t row = Hu_rows_[t][i];
+    Hy.row(i).noalias() = data->Hu.row(row) * Y;
+    ks(i) = data->h(row);
+    Ks.row(i) = data->Hx.row(row);
+  }
+  Hy_lu_[t].compute(Hy);
+  ks = Hy_lu_[t].solve(ks).eval();
+  Ks = Hy_lu_[t].solve(Ks).eval();
+  ks_[t].tail(ks_[t].size() - rank).setZero();
+  Ks_[t].bottomRows(Ks_[t].rows() - rank).setZero();
+  kz_[t].noalias() = Y * ks;
+  Kz_[t].noalias() = Y * Ks;
+}
+
+template <typename Scalar>
+void SolverIntroTpl<Scalar>::checkRankDeficiency() {
+  if (rank_deficiency_warned_) {
+    return;
+  }
+  const std::vector<std::shared_ptr<ActionModelAbstract> >& models =
+      problem_->get_runningModels();
+  for (std::size_t t = 0; t < problem_->get_T(); ++t) {
+    if (models[t]->get_nu() > 0 && Hu_rank_[t] < models[t]->get_nh()) {
+      std::cerr << "Warning: the control Jacobian of the equality constraints "
+                   "is rank deficient (e.g. node "
+                << t << ": rank " << Hu_rank_[t] << " < nh "
+                << models[t]->get_nh()
+                << "). SolverIntro ignores the equality constraints that the "
+                   "control of a node cannot satisfy, such as state-only "
+                   "constraints."
+                << std::endl;
+      rank_deficiency_warned_ = true;
+      return;
+    }
+  }
 }
 
 template <typename Scalar>

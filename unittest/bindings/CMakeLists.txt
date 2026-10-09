@@ -10,6 +10,7 @@ set(${PROJECT_NAME}_PYTHON_BINDINGS_TESTS
     squashing
     thrust_gradients
     thrust_invdyn
+    solver_intro
     copy)
 
 foreach(TEST ${${PROJECT_NAME}_PYTHON_BINDINGS_TESTS})
