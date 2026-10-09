@@ -9,6 +9,7 @@ set(${PROJECT_NAME}_PYTHON_BINDINGS_TESTS
     impulses
     squashing
     thrust_gradients
+    thrust_invdyn
     copy)
 
 foreach(TEST ${${PROJECT_NAME}_PYTHON_BINDINGS_TESTS})
