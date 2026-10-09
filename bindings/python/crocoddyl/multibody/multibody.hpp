@@ -45,6 +45,7 @@ void exposeDifferentialActionFreeInvDynamics();
 void exposeDifferentialActionContactFwdDynamics();
 void exposeDifferentialActionContactInvDynamics();
 void exposeDifferentialActionContactFwdDynamicsWithThrusts();
+void exposeDifferentialActionContactInvDynamicsWithThrusts();
 void exposeActionImpulseFwdDynamics();
 void exposeResidualState();
 void exposeResidualCentroidalMomentum();

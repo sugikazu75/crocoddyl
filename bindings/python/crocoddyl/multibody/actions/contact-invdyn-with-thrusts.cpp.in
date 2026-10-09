@@ -1,0 +1,252 @@
+///////////////////////////////////////////////////////////////////////////////
+// BSD 3-Clause License
+//
+// Copyright (C) 2024-2026, Heriot-Watt University
+// Copyright note valid unless otherwise stated in individual files.
+// All rights reserved.
+///////////////////////////////////////////////////////////////////////////////
+
+// Auto-generated file for @SCALAR_TYPE@
+#include "crocoddyl/multibody/actions/contact-invdyn-with-thrusts.hpp"
+
+#include "python/crocoddyl/core/diff-action-base.hpp"
+#include "python/crocoddyl/multibody/multibody.hpp"
+
+namespace crocoddyl {
+namespace python {
+
+template <typename Model>
+struct DifferentialActionModelContactInvDynamicsWithThrustsVisitor
+    : public bp::def_visitor<
+          DifferentialActionModelContactInvDynamicsWithThrustsVisitor<Model>> {
+  typedef typename Model::Scalar Scalar;
+  typedef typename Model::DifferentialActionDataAbstract Data;
+  typedef typename Model::StateAbstract State;
+  typedef typename Model::ActuationModelAbstract Actuation;
+  typedef typename Model::ContactModelMultiple Contacts;
+  typedef typename Model::CostModelSum Costs;
+  typedef typename Model::ConstraintModelManager Constraints;
+  typedef typename Model::VectorXs VectorXs;
+  template <class PyClass>
+  void visit(PyClass& cl) const {
+    cl.def(bp::init<std::shared_ptr<State>, std::shared_ptr<Actuation>,
+                    std::shared_ptr<Contacts>, std::shared_ptr<Costs>,
+                    std::shared_ptr<Constraints>>(
+               bp::args("self", "state", "actuation", "contacts", "costs",
+                        "constraints"),
+               "Initialize the contact inverse-dynamics action model with "
+               "thrusters.\n\n"
+               ":param state: multibody state, with (StateMultibodyWithThrusts) "
+               "or without (StateMultibody) thrusts\n"
+               ":param actuation: thruster actuation model\n"
+               ":param contacts: multiple contact model (nu = nf + nv + nc)\n"
+               ":param costs: stack of cost functions (nu = nf + nv + nc)\n"
+               ":param constraints: stack of constraint functions (nu = nf + "
+               "nv + nc)"))
+        .def("calc",
+             static_cast<void (Model::*)(const std::shared_ptr<Data>&,
+                                         const Eigen::Ref<const VectorXs>&,
+                                         const Eigen::Ref<const VectorXs>&)>(
+                 &Model::calc),
+             bp::args("self", "data", "x", "u"),
+             "Compute the joint torques, the dynamics constraints and the "
+             "costs.\n\n"
+             ":param data: inverse-dynamics action data\n"
+             ":param x: state point (dim. state.nx)\n"
+             ":param u: control input [thrusts or thrust rates, "
+             "accelerations, contact forces] (dim. nu)")
+        .def("calc",
+             static_cast<void (Model::*)(const std::shared_ptr<Data>&,
+                                         const Eigen::Ref<const VectorXs>&)>(
+                 &Model::calc),
+             bp::args("self", "data", "x"))
+        .def("calcDiff",
+             static_cast<void (Model::*)(const std::shared_ptr<Data>&,
+                                         const Eigen::Ref<const VectorXs>&,
+                                         const Eigen::Ref<const VectorXs>&)>(
+                 &Model::calcDiff),
+             bp::args("self", "data", "x", "u"),
+             "Compute the derivatives of the dynamics, costs and "
+             "constraints.\n\n"
+             "It assumes that calc has been run first.\n"
+             ":param data: inverse-dynamics action data\n"
+             ":param x: state point (dim. state.nx)\n"
+             ":param u: control input (dim. nu)")
+        .def("calcDiff",
+             static_cast<void (Model::*)(const std::shared_ptr<Data>&,
+                                         const Eigen::Ref<const VectorXs>&)>(
+                 &Model::calcDiff),
+             bp::args("self", "data", "x"))
+        .def("createData", &Model::createData, bp::args("self"),
+             "Create the contact inverse-dynamics differential action data.")
+        .def("computeEquilibriumThrust", &Model::computeEquilibriumThrust,
+             bp::args("self", "data", "q"),
+             "Compute the thrusts that hold the robot still at a given "
+             "configuration.\n\n"
+             ":param data: inverse-dynamics action data\n"
+             ":param q: robot configuration (dim. state.nq)\n"
+             ":return equilibrium thrust (dim. nf)")
+        .add_property("pinocchio",
+                      bp::make_function(&Model::get_pinocchio,
+                                        bp::return_internal_reference<>()),
+                      "multibody model (i.e. pinocchio model)")
+        .add_property(
+            "actuation",
+            bp::make_function(&Model::get_actuation,
+                              bp::return_value_policy<bp::return_by_value>()),
+            "actuation model")
+        .add_property(
+            "contacts",
+            bp::make_function(&Model::get_contacts,
+                              bp::return_value_policy<bp::return_by_value>()),
+            "multiple contact model")
+        .add_property(
+            "costs",
+            bp::make_function(&Model::get_costs,
+                              bp::return_value_policy<bp::return_by_value>()),
+            "total cost model")
+        .add_property(
+            "constraints",
+            bp::make_function(&Model::get_constraints,
+                              bp::return_value_policy<bp::return_by_value>()),
+            "user-defined constraint model manager")
+        .add_property("nf", bp::make_function(&Model::get_nf),
+                      "number of thrusters")
+        .add_property("nv_floating", bp::make_function(&Model::get_nv_floating),
+                      "number of unactuated generalized coordinates")
+        .add_property("thrust_state", bp::make_function(&Model::get_thrust_state),
+                      "true if the thrusts are part of the state")
+        .add_property(
+            "thrust_reg_weight",
+            bp::make_function(&Model::get_thrust_reg_weight,
+                              bp::return_value_policy<bp::return_by_value>()),
+            bp::make_function(&Model::set_thrust_reg_weight),
+            "per-thruster weight of the thrust regularization")
+        .add_property(
+            "thrust_barrier_weight",
+            bp::make_function(&Model::get_thrust_barrier_weight,
+                              bp::return_value_policy<bp::return_by_value>()),
+            "per-thruster weight of the thrust quadratic barrier")
+        .add_property(
+            "thrust_barrier_lb",
+            bp::make_function(&Model::get_thrust_barrier_lb,
+                              bp::return_value_policy<bp::return_by_value>()),
+            "lower bound of the thrust quadratic barrier")
+        .add_property(
+            "thrust_barrier_ub",
+            bp::make_function(&Model::get_thrust_barrier_ub,
+                              bp::return_value_policy<bp::return_by_value>()),
+            "upper bound of the thrust quadratic barrier")
+        .def("set_thrust_barrier", &Model::set_thrust_barrier,
+             bp::args("self", "weight", "lb", "ub"),
+             "Set the per-thruster quadratic barrier on the thrusts.\n\n"
+             ":param weight: per-thruster barrier weight (dim. nf)\n"
+             ":param lb: thrust lower bound (dim. nf)\n"
+             ":param ub: thrust upper bound (dim. nf)");
+  }
+};
+
+template <typename Data>
+struct DifferentialActionDataContactInvDynamicsWithThrustsVisitor
+    : public bp::def_visitor<
+          DifferentialActionDataContactInvDynamicsWithThrustsVisitor<Data>> {
+  template <class PyClass>
+  void visit(PyClass& cl) const {
+    cl.add_property(
+          "pinocchio",
+          bp::make_getter(&Data::pinocchio, bp::return_internal_reference<>()),
+          "pinocchio data")
+        .add_property("multibody",
+                      bp::make_getter(&Data::multibody,
+                                      bp::return_internal_reference<>()),
+                      "multibody data")
+        .add_property(
+            "costs",
+            bp::make_getter(&Data::costs,
+                            bp::return_value_policy<bp::return_by_value>()),
+            "total cost data")
+        .add_property(
+            "constraints",
+            bp::make_getter(&Data::constraints,
+                            bp::return_value_policy<bp::return_by_value>()),
+            "user-defined constraint data")
+        .add_property(
+            "u_act",
+            bp::make_getter(&Data::u_act, bp::return_internal_reference<>()),
+            "actuation input (thrust input, joint torques)")
+        .add_property("tau_thrust",
+                      bp::make_getter(&Data::tau_thrust,
+                                      bp::return_internal_reference<>()),
+                      "generalized forces produced by the thrusts");
+  }
+};
+
+#define CROCODDYL_ACTION_MODEL_CONTACT_INVDYN_WITH_THRUSTS_PYTHON_BINDINGS(   \
+    Scalar)                                                                   \
+  typedef DifferentialActionModelContactInvDynamicsWithThrustsTpl<Scalar>     \
+      Model;                                                                  \
+  typedef DifferentialActionModelAbstractTpl<Scalar> ModelBase;               \
+  typedef typename Model::StateAbstract State;                                \
+  typedef typename Model::ActuationModelAbstract Actuation;                   \
+  typedef typename Model::ContactModelMultiple Contacts;                      \
+  typedef typename Model::CostModelSum Costs;                                 \
+  bp::register_ptr_to_python<std::shared_ptr<Model>>();                       \
+  bp::class_<Model, bp::bases<ModelBase>>(                                    \
+      "DifferentialActionModelContactInvDynamicsWithThrusts",                 \
+      "Differential action model for contact inverse dynamics with "          \
+      "thrusters.\n\n"                                                        \
+      "The thrusts are decision variables: the control is u = (w, a, f_c), "  \
+      "where w are the thrusts (StateMultibody) or their rates "              \
+      "(StateMultibodyWithThrusts). The unactuated rows of the inverse "      \
+      "dynamics, the contact accelerations and the thrust limits (thrust "    \
+      "state) are imposed as constraints, and the joint torques are derived " \
+      "quantities.",                                                          \
+      bp::init<std::shared_ptr<State>, std::shared_ptr<Actuation>,            \
+               std::shared_ptr<Contacts>, std::shared_ptr<Costs>>(            \
+          bp::args("self", "state", "actuation", "contacts", "costs"),        \
+          "Initialize the contact inverse-dynamics action model with "        \
+          "thrusters.\n\n"                                                    \
+          ":param state: multibody state, with (StateMultibodyWithThrusts) "  \
+          "or without (StateMultibody) thrusts\n"                             \
+          ":param actuation: thruster actuation model\n"                      \
+          ":param contacts: multiple contact model (nu = nf + nv + nc)\n"     \
+          ":param costs: stack of cost functions (nu = nf + nv + nc)"))       \
+      .def(DifferentialActionModelContactInvDynamicsWithThrustsVisitor<       \
+           Model>())                                                          \
+      .def(CastVisitor<Model>())                                              \
+      .def(PrintableVisitor<Model>())                                         \
+      .def(CopyableVisitor<Model>());
+
+#define CROCODDYL_ACTION_DATA_CONTACT_INVDYN_WITH_THRUSTS_PYTHON_BINDINGS(    \
+    Scalar)                                                                   \
+  typedef DifferentialActionDataContactInvDynamicsWithThrustsTpl<Scalar>      \
+      Data;                                                                   \
+  typedef DifferentialActionDataAbstractTpl<Scalar> DataBase;                 \
+  typedef DifferentialActionModelContactInvDynamicsWithThrustsTpl<Scalar>     \
+      Model;                                                                  \
+  bp::register_ptr_to_python<std::shared_ptr<Data>>();                        \
+  bp::class_<Data, bp::bases<DataBase>>(                                      \
+      "DifferentialActionDataContactInvDynamicsWithThrusts",                  \
+      "Action data for the contact inverse dynamics system with thrusters.",  \
+      bp::init<Model*>(                                                       \
+          bp::args("self", "model"),                                          \
+          "Create the contact inverse-dynamics action data.\n\n"              \
+          ":param model: contact inverse-dynamics action model"))             \
+      .def(DifferentialActionDataContactInvDynamicsWithThrustsVisitor<Data>()) \
+      .def(CopyableVisitor<Data>());
+
+void exposeDifferentialActionContactInvDynamicsWithThrusts() {
+  // Each macro introduces its own `Model`/`Data` typedefs, so keep them in
+  // separate scopes.
+  {
+    CROCODDYL_ACTION_MODEL_CONTACT_INVDYN_WITH_THRUSTS_PYTHON_BINDINGS(
+        @SCALAR_TYPE@)
+  }
+  {
+    CROCODDYL_ACTION_DATA_CONTACT_INVDYN_WITH_THRUSTS_PYTHON_BINDINGS(
+        @SCALAR_TYPE@)
+  }
+}
+
+}  // namespace python
+}  // namespace crocoddyl
