@@ -15,6 +15,8 @@
 #include <pinocchio/algorithm/rnea-derivatives.hpp>
 #include <pinocchio/utils/static-if.hpp>
 
+#include "crocoddyl/multibody/utils/static-equilibrium.hpp"
+
 namespace crocoddyl {
 
 template <typename Scalar>
@@ -773,160 +775,14 @@ DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
       lb(i) = std::max(lb(i), thruster.min_thrust_);
       ub(i) = std::min(ub(i), thruster.max_thrust_);
     }
-    if (lb(i) > ub(i)) {
-      throw_pretty(
-          "Invalid argument: " << "The thrust bounds are inconsistent");
-    }
   }
 
-  // Contact-force decision variables are expressed in LOCAL coordinates.  The
-  // ContactModel may expose Jc in WORLD / LOCAL_WORLD_ALIGNED, so rotate those
-  // Jacobian blocks back to LOCAL before applying the normal-force bound.
-  std::size_t contact_offset = 0;
-  typename ContactModelMultiple::ContactModelContainer::const_iterator it, end;
-  for (it = contacts_->get_contacts().begin(),
-      end = contacts_->get_contacts().end();
-       it != end; ++it) {
-    const std::shared_ptr<typename ContactModelMultiple::ContactItem>& item =
-        it->second;
-    if (!item->active) {
-      continue;
-    }
-    const std::size_t nc_i = item->contact->get_nc();
-    Eigen::Block<MatrixXs> Jc_i =
-        d->multibody.contacts->Jc.block(contact_offset, 0, nc_i, nv);
-    Eigen::Block<MatrixXs> Jstatic_i =
-        d->tmp_Jstatic.block(0, nu_ + contact_offset, nv, nc_i);
-
-    if (item->contact->get_type() == pinocchio::ReferenceFrame::LOCAL ||
-        nc_i == 2) {
-      Jstatic_i.noalias() = Jc_i.transpose();
-    } else if (nc_i == 3 || nc_i == 6) {
-      const Eigen::Ref<const typename MathBase::Matrix3s> oRf =
-          d->pinocchio.oMf[item->contact->get_id()].rotation();
-      MatrixXs Jc_local = MatrixXs::Zero(nc_i, nv);
-      Jc_local.template topRows<3>().noalias() =
-          oRf.transpose() * Jc_i.template topRows<3>();
-      if (nc_i == 6) {
-        Jc_local.template bottomRows<3>().noalias() =
-            oRf.transpose() * Jc_i.template bottomRows<3>();
-      }
-      Jstatic_i.noalias() = Jc_local.transpose();
-    } else {
-      Jstatic_i.noalias() = Jc_i.transpose();
-    }
-
-    if (nc_i > 0) {
-      const std::size_t normal_id = nc_i == 1 ? 0 : (nc_i == 2 ? 1 : 2);
-      lb(nu_ + contact_offset + normal_id) = Scalar(0.);
-    }
-    contact_offset += nc_i;
-  }
-
-  // Weighted minimum-norm static solution.  Thrust is more expensive than joint
-  // torques/contact forces, so ground support is used before thrust, while a
-  // ceiling contact cannot pull because of the normal-force lower bound above.
-  const std::size_t nz = nu_ + nc;
-  VectorXs weights = VectorXs::Constant(nz, Scalar(1.));
-  VectorXs inv_weights = weights.cwiseInverse();
-  VectorXs sol = VectorXs::Zero(nz);
-  VectorXs fixed = VectorXs::Zero(nz);
-  VectorXs mu = VectorXs::Zero(nv);
-  std::vector<int> active_bound(nz, 0);  // -1: lower, +1: upper, 0: free
-  const Scalar bound_tol = ScaleNumerics<Scalar>(1e-9);
-  const Scalar eq_tol = ScaleNumerics<Scalar>(1e-8);
-  bool converged = false;
-
-  for (std::size_t iter = 0; iter <= 4 * nz + 10; ++iter) {
-    std::vector<std::size_t> free_ids;
-    free_ids.reserve(nz);
-    VectorXs rhs = g_tau;
-    for (std::size_t i = 0; i < nz; ++i) {
-      if (active_bound[i] != 0) {
-        fixed(i) = active_bound[i] < 0 ? lb(i) : ub(i);
-        rhs.noalias() -= d->tmp_Jstatic.col(i) * fixed(i);
-        sol(i) = fixed(i);
-      } else {
-        free_ids.push_back(i);
-      }
-    }
-
-    const std::size_t nfree = free_ids.size();
-    if (nfree > 0) {
-      MatrixXs AWinvAt = MatrixXs::Zero(nv, nv);
-      for (std::size_t j = 0; j < nfree; ++j) {
-        const std::size_t id = free_ids[j];
-        AWinvAt.noalias() += inv_weights(id) * d->tmp_Jstatic.col(id) *
-                             d->tmp_Jstatic.col(id).transpose();
-      }
-      mu.noalias() = -pseudoInverse(AWinvAt) * rhs;
-      for (std::size_t j = 0; j < nfree; ++j) {
-        const std::size_t id = free_ids[j];
-        sol(id) = -inv_weights(id) * d->tmp_Jstatic.col(id).dot(mu);
-      }
-    } else {
-      mu.setZero();
-    }
-
-    std::size_t worst_id = nz;
-    Scalar worst_violation = Scalar(0.);
-    int worst_bound = 0;
-    for (std::size_t j = 0; j < nfree; ++j) {
-      const std::size_t id = free_ids[j];
-      if (sol(id) < lb(id) - bound_tol) {
-        const Scalar violation = lb(id) - sol(id);
-        if (violation > worst_violation) {
-          worst_violation = violation;
-          worst_id = id;
-          worst_bound = -1;
-        }
-      } else if (sol(id) > ub(id) + bound_tol) {
-        const Scalar violation = sol(id) - ub(id);
-        if (violation > worst_violation) {
-          worst_violation = violation;
-          worst_id = id;
-          worst_bound = 1;
-        }
-      }
-    }
-    if (worst_id != nz) {
-      active_bound[worst_id] = worst_bound;
-      continue;
-    }
-
-    if ((d->tmp_Jstatic * sol - g_tau).norm() >
-        eq_tol * std::max(Scalar(1.), g_tau.norm())) {
-      throw_pretty("Runtime error: "
-                   << "No feasible bounded static equilibrium was found");
-    }
-
-    VectorXs gradient = weights.cwiseProduct(sol);
-    gradient.noalias() += d->tmp_Jstatic.transpose() * mu;
-    worst_id = nz;
-    worst_violation = Scalar(0.);
-    for (std::size_t i = 0; i < nz; ++i) {
-      if (active_bound[i] == 0) {
-        continue;
-      }
-      const Scalar violation = active_bound[i] < 0 ? -gradient(i) : gradient(i);
-      if (violation > worst_violation + bound_tol) {
-        worst_violation = violation;
-        worst_id = i;
-      }
-    }
-    if (worst_id != nz) {
-      active_bound[worst_id] = 0;
-    } else {
-      converged = true;
-      break;
-    }
-  }
-
-  if (!converged) {
-    throw_pretty("Runtime error: "
-                 << "The bounded static equilibrium QP did not converge");
-  }
-
+  // Contact-force decision variables are expressed in LOCAL coordinates, and
+  // their normal components cannot pull
+  fillStaticEquilibriumContacts(*contacts_, *d->multibody.contacts,
+                                d->pinocchio, false, nu_, d->tmp_Jstatic, lb);
+  const VectorXs sol =
+      solveStaticEquilibrium<Scalar>(d->tmp_Jstatic, g_tau, lb, ub);
   d->pinocchio.tau.setZero();
   return sol.head(nf_);
 }
@@ -1025,9 +881,16 @@ IntegratedActionModelEulerWithThrustsTpl<Scalar>::
       dt_(time_step),
       dt2_(time_step * time_step),
       nv_(model->get_state()->get_nv()),
-      nf_(std::static_pointer_cast<StateMultibodyWithThrustsTpl<Scalar>>(
-              model->get_state())
-              ->get_nthrusters()) {
+      nf_(0) {
+  std::shared_ptr<StateMultibodyWithThrustsTpl<Scalar>> state =
+      std::dynamic_pointer_cast<StateMultibodyWithThrustsTpl<Scalar>>(
+          model->get_state());
+  if (state == nullptr) {
+    throw_pretty("Invalid argument: "
+                 << "the differential model should be defined over "
+                    "StateMultibodyWithThrusts");
+  }
+  nf_ = state->get_nthrusters();
   Base::set_u_lb(model->get_u_lb());
   Base::set_u_ub(model->get_u_ub());
 }
@@ -1181,17 +1044,13 @@ template <typename NewScalar>
 IntegratedActionModelEulerWithThrustsTpl<NewScalar>
 IntegratedActionModelEulerWithThrustsTpl<Scalar>::cast() const {
   typedef IntegratedActionModelEulerWithThrustsTpl<NewScalar> ReturnType;
-  typedef DifferentialActionModelContactFwdDynamicsWithThrustsTpl<NewScalar>
-      DiffType;
-  ReturnType ret(
-      std::make_shared<DiffType>(differential_->template cast<NewScalar>()),
-      scalar_cast<NewScalar>(dt_));
+  ReturnType ret(differential_->template cast<NewScalar>(),
+                 scalar_cast<NewScalar>(dt_));
   return ret;
 }
 
 template <typename Scalar>
-const std::shared_ptr<
-    DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>>&
+const std::shared_ptr<DifferentialActionModelAbstractTpl<Scalar>>&
 IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_differential() const {
   return differential_;
 }
@@ -1225,6 +1084,18 @@ std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_ng_T() const {
 template <typename Scalar>
 std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_nh_T() const {
   return differential_->get_nh_T();
+}
+
+template <typename Scalar>
+const typename MathBaseTpl<Scalar>::VectorXs&
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_g_lb() const {
+  return differential_->get_g_lb();
+}
+
+template <typename Scalar>
+const typename MathBaseTpl<Scalar>::VectorXs&
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_g_ub() const {
+  return differential_->get_g_ub();
 }
 
 template <typename Scalar>

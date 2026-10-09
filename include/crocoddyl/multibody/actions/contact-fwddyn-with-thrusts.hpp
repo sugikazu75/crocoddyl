@@ -286,8 +286,11 @@ struct DifferentialActionDataContactFwdDynamicsWithThrustsTpl
 /**
  * @brief Euler-integrated action model for systems with augmented thrust state.
  *
- * Wraps `DifferentialActionModelContactFwdDynamicsWithThrustsTpl` and
- * implements the following Euler step for state  x = [q, v, f]:
+ * Wraps a differential action model over `StateMultibodyWithThrustsTpl`
+ * whose first nf controls are the thrust rates, i.e.
+ * `DifferentialActionModelContactFwdDynamicsWithThrustsTpl` or
+ * `DifferentialActionModelContactInvDynamicsWithThrustsTpl`, and implements
+ * the following Euler step for state  x = [q, v, f]:
  *
  *   dx = [ v * dt + vdot * dt^2,   (config-tangent, nv)
  *          vdot * dt,               (velocity-tangent, nv)
@@ -311,8 +314,7 @@ class IntegratedActionModelEulerWithThrustsTpl
   typedef ActionModelAbstractTpl<Scalar> Base;
   typedef ActionDataAbstractTpl<Scalar> ActionDataAbstract;
   typedef IntegratedActionDataEulerWithThrustsTpl<Scalar> Data;
-  typedef DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>
-      DifferentialModel;
+  typedef DifferentialActionModelAbstractTpl<Scalar> DifferentialModel;
   typedef DifferentialActionDataAbstractTpl<Scalar> DifferentialData;
   typedef MathBaseTpl<Scalar> MathBase;
   typedef typename MathBase::VectorXs VectorXs;
@@ -361,6 +363,8 @@ class IntegratedActionModelEulerWithThrustsTpl
   virtual std::size_t get_nh() const override;
   virtual std::size_t get_ng_T() const override;
   virtual std::size_t get_nh_T() const override;
+  virtual const VectorXs& get_g_lb() const override;
+  virtual const VectorXs& get_g_ub() const override;
 
   virtual void print(std::ostream& os) const override;
 
