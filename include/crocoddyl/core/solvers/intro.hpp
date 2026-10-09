@@ -9,6 +9,8 @@
 #ifndef CROCODDYL_CORE_SOLVERS_INTRO_HPP_
 #define CROCODDYL_CORE_SOLVERS_INTRO_HPP_
 
+#include <iostream>
+
 #include "crocoddyl/core/solvers/fddp.hpp"
 
 namespace crocoddyl {
@@ -230,6 +232,23 @@ class SolverIntroTpl : public SolverFDDPTpl<_Scalar> {
 
   void calcLuNullDir();
   void calcQrNullDir();
+  /**
+   * @brief Compute the feedforward and feedback terms in the span of
+   * \f$\mathbf{H_u}\f$
+   *
+   * It uses the `Hu_rank_[t]` linearly independent rows of
+   * \f$\mathbf{H_u}\f$ listed in `Hu_rows_[t]`, and the span stored in the
+   * first `Hu_rank_[t]` columns of `YZ_[t]`. The other rows depend on them or
+   * do not depend on the control (e.g. state-only constraints) and are
+   * dropped, since the control of this node cannot satisfy them.
+   */
+  void computeSpaceDir(const std::size_t t,
+                       const std::shared_ptr<ActionDataAbstract>& data);
+  /**
+   * @brief Warn once when equality constraints are dropped because
+   * \f$\mathbf{H_u}\f$ is rank deficient
+   */
+  void checkRankDeficiency();
   void computeNullPolicy(const std::size_t t);
   void computeNullBatchPolicy(const std::size_t t);
   void computeSchurPolicy(const std::size_t t);
@@ -240,6 +259,11 @@ class SolverIntroTpl : public SolverFDDPTpl<_Scalar> {
 
   std::vector<std::size_t>
       Hu_rank_;  //!< Rank of the control Jacobian of the equality constraints
+  std::vector<std::vector<std::size_t> >
+      Hu_rows_;  //!< Linearly independent rows of the control Jacobian of the
+                 //!< equality constraints (first `Hu_rank_` entries)
+  bool rank_deficiency_warned_;  //!< True once the rank deficiency of
+                                 //!< \f$\mathbf{H_u}\f$ has been reported
   std::vector<MatrixXsRowMajor> KQuu_2Qxu_;
   std::vector<MatrixXs>
       YZ_;  //!< Span \f$\mathbf{Y}\in\mathbb{R}^{rank}\f$ and kernel
