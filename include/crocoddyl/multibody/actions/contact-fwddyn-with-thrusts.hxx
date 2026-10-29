@@ -406,9 +406,11 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
   }
 
   if (constraints_ != nullptr) {
+    // Robot-only Jacobians leave the thrust columns untouched, while those of
+    // contact-force residuals fill them with the thrust-state derivatives
+    d->Gx.setZero();
+    d->Hx.setZero();
     constraints_->calcDiff(d->constraints, x.head(nq + nv), u);
-    d->Gx.rightCols(nf_).setZero();
-    d->Hx.rightCols(nf_).setZero();
   }
 }
 
@@ -485,9 +487,11 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
     }
   }
   if (constraints_ != nullptr) {
+    // Robot-only Jacobians leave the thrust columns untouched, while those of
+    // contact-force residuals fill them with the thrust-state derivatives
+    d->Gx.setZero();
+    d->Hx.setZero();
     constraints_->calcDiff(d->constraints, x.head(nq + nv));
-    d->Gx.rightCols(nf_).setZero();
-    d->Hx.rightCols(nf_).setZero();
   }
 }
 
