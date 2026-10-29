@@ -74,6 +74,14 @@ void ResidualModelAbstractTpl<Scalar>::calcCostDiff(
   // Gauss-Newton approximation
   const bool is_ru = u_dependent_ && nu_ != 0 && update_u;
   const std::size_t nv = state_->get_nv();
+  // Widen the cost workspace when Rx spans an augmented (e.g. thrust) state
+  if (q_dependent_ && v_dependent_ && cdata->Lx.size() != rdata->Rx.cols()) {
+    const Eigen::Index ndx = rdata->Rx.cols();
+    cdata->Lx.setZero(ndx);
+    cdata->Lxx.setZero(ndx, ndx);
+    cdata->Lxu.setZero(ndx, cdata->Lu.size());
+    rdata->Arr_Rx.setZero(rdata->r.size(), ndx);
+  }
   if (is_ru) {
     cdata->Lu.noalias() = rdata->Ru.transpose() * adata->Ar;
     rdata->Arr_Ru.noalias() = adata->Arr.diagonal().asDiagonal() * rdata->Ru;

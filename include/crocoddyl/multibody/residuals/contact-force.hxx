@@ -120,6 +120,7 @@ void ResidualModelContactForceTpl<Scalar>::updateJacobians(
 
   const MatrixXs& df_dx = d->contact->df_dx;
   const MatrixXs& df_du = d->contact->df_du;
+  data->Rx.resize(data->r.size(), df_dx.cols());
   switch (d->contact_type) {
     case Contact1D:
       data->Rx = df_dx.template topRows<1>();

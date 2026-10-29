@@ -300,15 +300,15 @@ template <typename Scalar>
 void ContactModelMultipleTpl<Scalar>::updateForceDiff(
     const std::shared_ptr<ContactDataMultiple>& data, const MatrixXs& df_dx,
     const MatrixXs& df_du) const {
-  const std::size_t ndx = state_->get_ndx();
+  const std::size_t ndx = static_cast<std::size_t>(df_dx.cols());
   if (static_cast<std::size_t>(df_dx.rows()) !=
           (compute_all_contacts_ ? nc_total_ : nc_) ||
-      static_cast<std::size_t>(df_dx.cols()) != ndx) {
+      ndx < state_->get_ndx()) {
     throw_pretty(
         "Invalid argument: "
         << "df_dx has wrong dimension (it should be " +
-               std::to_string((compute_all_contacts_ ? nc_total_ : nc_)) + "," +
-               std::to_string(ndx) + ")");
+               std::to_string((compute_all_contacts_ ? nc_total_ : nc_)) +
+               ", at least " + std::to_string(state_->get_ndx()) + ")");
   }
   if (static_cast<std::size_t>(df_du.rows()) !=
           (compute_all_contacts_ ? nc_total_ : nc_) ||
