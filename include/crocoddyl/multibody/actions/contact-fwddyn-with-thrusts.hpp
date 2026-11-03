@@ -323,7 +323,8 @@ class IntegratedActionModelEulerWithThrustsTpl
    * @param[in] time_step  Integration step (dt)
    */
   IntegratedActionModelEulerWithThrustsTpl(
-      std::shared_ptr<DifferentialModel> model, const Scalar time_step = 1e-3);
+      std::shared_ptr<DifferentialModel> model,
+      const Scalar time_step = Scalar(1e-3));
   virtual ~IntegratedActionModelEulerWithThrustsTpl() = default;
 
   virtual void calc(const std::shared_ptr<ActionDataAbstract>& data,
