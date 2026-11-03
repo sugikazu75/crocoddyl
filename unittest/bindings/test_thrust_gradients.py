@@ -52,8 +52,12 @@ def force_residual(robot, frame_id, nu):
 def cone_residual(robot, frame_id, nu):
     cone = crocoddyl.FrictionCone(np.eye(3), 0.7, 4, False)
     res = crocoddyl.ResidualModelContactFrictionCone(robot, frame_id, cone, nu)
+    # Bounds that every row exceeds, so the barrier is active whatever the random
+    # state: with the cone bounds, the force is inside the cone for some states and
+    # the cost and its gradient vanish.
+    n = cone.lb.size
     act = crocoddyl.ActivationModelQuadraticBarrier(
-        crocoddyl.ActivationBounds(cone.lb, cone.ub)
+        crocoddyl.ActivationBounds(np.full(n, -np.inf), np.full(n, -1e3))
     )
     return crocoddyl.CostModelResidual(robot, act, res)
 
