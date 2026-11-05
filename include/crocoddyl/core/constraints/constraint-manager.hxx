@@ -226,6 +226,28 @@ void ConstraintModelManagerTpl<Scalar>::calc(
 }
 
 template <typename Scalar>
+void ConstraintModelManagerTpl<Scalar>::checkJacobianWidth(
+    const std::shared_ptr<ConstraintDataManager>& data,
+    const std::shared_ptr<ConstraintDataAbstract>& data_i,
+    const std::string& name, const std::size_t ndx) const {
+  const Eigen::Index ndx_min = static_cast<Eigen::Index>(ndx);
+  if (data_i->Gx.rows() > 0 &&
+      (data_i->Gx.cols() < ndx_min || data_i->Gx.cols() > data->Gx.cols())) {
+    throw_pretty("Invalid argument: constraint "
+                 << name << " returned Gx with " << data_i->Gx.cols()
+                 << " columns; expected between " << ndx << " and "
+                 << data->Gx.cols());
+  }
+  if (data_i->Hx.rows() > 0 &&
+      (data_i->Hx.cols() < ndx_min || data_i->Hx.cols() > data->Hx.cols())) {
+    throw_pretty("Invalid argument: constraint "
+                 << name << " returned Hx with " << data_i->Hx.cols()
+                 << " columns; expected between " << ndx << " and "
+                 << data->Hx.cols());
+  }
+}
+
+template <typename Scalar>
 void ConstraintModelManagerTpl<Scalar>::calcDiff(
     const std::shared_ptr<ConstraintDataManager>& data,
     const Eigen::Ref<const VectorXs>& x, const Eigen::Ref<const VectorXs>& u) {
@@ -271,9 +293,11 @@ void ConstraintModelManagerTpl<Scalar>::calcDiff(
       m_i->constraint->calcDiff(d_i, x, u);
       const std::size_t ng = m_i->constraint->get_ng();
       const std::size_t nh = m_i->constraint->get_nh();
-      data->Gx.block(ng_i, 0, ng, ndx) = d_i->Gx;
+      // Jacobians may span an augmented (e.g. thrust) state wider than ndx
+      checkJacobianWidth(data, d_i, it_m->first, ndx);
+      data->Gx.block(ng_i, 0, ng, d_i->Gx.cols()) = d_i->Gx;
       data->Gu.block(ng_i, 0, ng, nu_) = d_i->Gu;
-      data->Hx.block(nh_i, 0, nh, ndx) = d_i->Hx;
+      data->Hx.block(nh_i, 0, nh, d_i->Hx.cols()) = d_i->Hx;
       data->Hu.block(nh_i, 0, nh, nu_) = d_i->Hu;
       ng_i += ng;
       nh_i += nh;
@@ -321,8 +345,9 @@ void ConstraintModelManagerTpl<Scalar>::calcDiff(
       m_i->constraint->calcDiff(d_i, x);
       const std::size_t ng = m_i->constraint->get_ng();
       const std::size_t nh = m_i->constraint->get_nh();
-      data->Gx.block(ng_i, 0, ng, ndx) = d_i->Gx;
-      data->Hx.block(nh_i, 0, nh, ndx) = d_i->Hx;
+      checkJacobianWidth(data, d_i, it_m->first, ndx);
+      data->Gx.block(ng_i, 0, ng, d_i->Gx.cols()) = d_i->Gx;
+      data->Hx.block(nh_i, 0, nh, d_i->Hx.cols()) = d_i->Hx;
       ng_i += ng;
       nh_i += nh;
     }

@@ -146,7 +146,8 @@ class DifferentialActionModelContactFwdDynamicsWithThrustsTpl
 
   VectorXs computeEquilibriumThrust(
       const std::shared_ptr<DifferentialActionDataAbstract>& data,
-      const Eigen::Ref<const VectorXs>& q);
+      const Eigen::Ref<const VectorXs>& q,
+      const Scalar min_normal_force = Scalar(0.));
 
   const std::shared_ptr<ActuationModelAbstract>& get_actuation() const;
   const std::shared_ptr<ContactModelMultiple>& get_contacts() const;
@@ -323,7 +324,8 @@ class IntegratedActionModelEulerWithThrustsTpl
    * @param[in] time_step  Integration step (dt)
    */
   IntegratedActionModelEulerWithThrustsTpl(
-      std::shared_ptr<DifferentialModel> model, const Scalar time_step = 1e-3);
+      std::shared_ptr<DifferentialModel> model,
+      const Scalar time_step = Scalar(1e-3));
   virtual ~IntegratedActionModelEulerWithThrustsTpl() = default;
 
   virtual void calc(const std::shared_ptr<ActionDataAbstract>& data,
@@ -361,6 +363,8 @@ class IntegratedActionModelEulerWithThrustsTpl
   virtual std::size_t get_nh() const override;
   virtual std::size_t get_ng_T() const override;
   virtual std::size_t get_nh_T() const override;
+  virtual const VectorXs& get_g_lb() const override;
+  virtual const VectorXs& get_g_ub() const override;
 
   virtual void print(std::ostream& os) const override;
 

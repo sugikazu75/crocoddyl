@@ -81,11 +81,14 @@ struct DifferentialActionModelContactFwdDynamicsWithThrustsVisitor
         .def("createData", &Model::createData, bp::args("self"),
              "Create the contact forward-dynamics differential action data.")
         .def("computeEquilibriumThrust", &Model::computeEquilibriumThrust,
-             bp::args("self", "data", "q"),
+             (bp::arg("self"), bp::arg("data"), bp::arg("q"),
+              bp::arg("min_normal_force") = Scalar(0.)),
              "Compute the thrust forces that balance gravity at a given "
              "configuration.\n\n"
              ":param data: contact forward-dynamics action data\n"
              ":param q: robot configuration (dim. state.nq)\n"
+             ":param min_normal_force: lower bound of the normal force of each "
+             "active contact (default 0)\n"
              ":return equilibrium thrust (dim. nf)")
         .add_property("pinocchio",
                       bp::make_function(&Model::get_pinocchio,

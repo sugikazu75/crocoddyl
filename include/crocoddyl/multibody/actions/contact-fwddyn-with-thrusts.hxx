@@ -291,23 +291,62 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
         -f_partial_dtau * d->multibody.actuation->dtau_du;
     contacts_->updateAccelerationDiff(d->multibody.contacts,
                                       d->Fx.bottomRows(nv).leftCols(2 * nv));
-    contacts_->updateForceDiff(d->multibody.contacts,
-                               d->df_dx.topRows(nc).leftCols(2 * nv),
+    contacts_->updateForceDiff(d->multibody.contacts, d->df_dx.topRows(nc),
                                d->df_du.topRows(nc));
   }
   if (robot_only_costs_) {
-    costs_->calcDiff(d->costs, x.head(nq + nv), u);
-    // Zero-pad cost gradients into the full augmented-state action gradients
+    // Sum costs whose derivatives span either the robot or the augmented state
     const std::size_t robot_ndx = costs_->get_state()->get_ndx();
-    d->Lx.head(robot_ndx) = d->costs->Lx;
-    d->Lx.tail(nf_).setZero();
-    d->Lu = d->costs->Lu;
-    d->Lxx.topLeftCorner(robot_ndx, robot_ndx) = d->costs->Lxx;
-    d->Lxx.topRightCorner(robot_ndx, nf_).setZero();
-    d->Lxx.bottomRows(nf_).setZero();
-    d->Lxu.topRows(robot_ndx) = d->costs->Lxu;
-    d->Lxu.bottomRows(nf_).setZero();
-    d->Luu = d->costs->Luu;
+    const std::size_t action_ndx = state_->get_ndx();
+    d->Lx.setZero();
+    d->Lu.setZero();
+    d->Lxx.setZero();
+    d->Lxu.setZero();
+    d->Luu.setZero();
+    d->costs->Lx.setZero();
+    d->costs->Lu.setZero();
+    d->costs->Lxx.setZero();
+    d->costs->Lxu.setZero();
+    d->costs->Luu.setZero();
+    for (const auto& cost_entry : costs_->get_costs()) {
+      const std::shared_ptr<typename CostModelSum::CostItem>& item =
+          cost_entry.second;
+      if (!item->active) {
+        continue;
+      }
+      const auto data_it = d->costs->costs.find(cost_entry.first);
+      if (data_it == d->costs->costs.end()) {
+        throw_pretty("Invalid argument: missing data for cost "
+                     << cost_entry.first);
+      }
+      const std::shared_ptr<CostDataAbstractTpl<Scalar>>& cost_data =
+          data_it->second;
+      item->cost->calcDiff(cost_data, x.head(nq + nv), u);
+      const std::size_t cost_ndx =
+          static_cast<std::size_t>(cost_data->Lx.size());
+      if (cost_ndx != robot_ndx && cost_ndx != action_ndx) {
+        throw_pretty("Invalid argument: cost "
+                     << cost_entry.first << " returned " << cost_ndx
+                     << " state-derivative columns; expected " << robot_ndx
+                     << " or " << action_ndx);
+      }
+
+      const Scalar weight = item->weight;
+      d->Lx.head(cost_ndx).noalias() += weight * cost_data->Lx;
+      d->Lu.noalias() += weight * cost_data->Lu;
+      d->Lxx.topLeftCorner(cost_ndx, cost_ndx).noalias() +=
+          weight * cost_data->Lxx;
+      d->Lxu.topRows(cost_ndx).noalias() += weight * cost_data->Lxu;
+      d->Luu.noalias() += weight * cost_data->Luu;
+
+      // Keep the robot-only CostDataSum view for callers that inspect it
+      d->costs->Lx.noalias() += weight * cost_data->Lx.head(robot_ndx);
+      d->costs->Lu.noalias() += weight * cost_data->Lu;
+      d->costs->Lxx.noalias() +=
+          weight * cost_data->Lxx.topLeftCorner(robot_ndx, robot_ndx);
+      d->costs->Lxu.noalias() += weight * cost_data->Lxu.topRows(robot_ndx);
+      d->costs->Luu.noalias() += weight * cost_data->Luu;
+    }
 
     // Thrust regularization gradient: dL/df_i = w_i*f_i, d^2L/df_i^2 = w_i
     if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
@@ -328,7 +367,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
       const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
       for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
         d->Lxx(k + i, k + i) +=
-            thrust_barrier_weight_[i] *
+            thrust_barrier_weight_[i] * thrust_barrier_weight_[i] *
             if_then_else(
                 pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
                 Scalar(1.),
@@ -356,7 +395,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
       const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
       for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
         d->Lxx(k + i, k + i) +=
-            thrust_barrier_weight_[i] *
+            thrust_barrier_weight_[i] * thrust_barrier_weight_[i] *
             if_then_else(
                 pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
                 Scalar(1.),
@@ -367,9 +406,11 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
   }
 
   if (constraints_ != nullptr) {
+    // Robot-only Jacobians leave the thrust columns untouched, while those of
+    // contact-force residuals fill them with the thrust-state derivatives
+    d->Gx.setZero();
+    d->Hx.setZero();
     constraints_->calcDiff(d->constraints, x.head(nq + nv), u);
-    d->Gx.rightCols(nf_).setZero();
-    d->Hx.rightCols(nf_).setZero();
   }
 }
 
@@ -410,7 +451,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
       const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
       for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
         d->Lxx(k + i, k + i) +=
-            thrust_barrier_weight_[i] *
+            thrust_barrier_weight_[i] * thrust_barrier_weight_[i] *
             if_then_else(
                 pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
                 Scalar(1.),
@@ -436,7 +477,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
       const Eigen::Index k = static_cast<Eigen::Index>(d->Lxx.rows() - nf_);
       for (Eigen::Index i = 0; i < static_cast<Eigen::Index>(nf_); ++i) {
         d->Lxx(k + i, k + i) +=
-            thrust_barrier_weight_[i] *
+            thrust_barrier_weight_[i] * thrust_barrier_weight_[i] *
             if_then_else(
                 pinocchio::internal::LE, f[i] - thrust_lb_[i], Scalar(0.),
                 Scalar(1.),
@@ -446,9 +487,11 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
     }
   }
   if (constraints_ != nullptr) {
+    // Robot-only Jacobians leave the thrust columns untouched, while those of
+    // contact-force residuals fill them with the thrust-state derivatives
+    d->Gx.setZero();
+    d->Hx.setZero();
     constraints_->calcDiff(d->constraints, x.head(nq + nv));
-    d->Gx.rightCols(nf_).setZero();
-    d->Hx.rightCols(nf_).setZero();
   }
 }
 
@@ -677,7 +720,7 @@ typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
 DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
     computeEquilibriumThrust(
         const std::shared_ptr<DifferentialActionDataAbstract>& data,
-        const Eigen::Ref<const VectorXs>& q) {
+        const Eigen::Ref<const VectorXs>& q, const Scalar min_normal_force) {
   Data* d = static_cast<Data*>(data.get());
   const std::size_t nq = state_->get_nq();
   const std::size_t nv = state_->get_nv();
@@ -779,7 +822,7 @@ DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
 
     if (nc_i > 0) {
       const std::size_t normal_id = nc_i == 1 ? 0 : (nc_i == 2 ? 1 : 2);
-      lb(nu_ + contact_offset + normal_id) = Scalar(0.);
+      lb(nu_ + contact_offset + normal_id) = min_normal_force;
     }
     contact_offset += nc_i;
   }
@@ -1186,6 +1229,18 @@ std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_ng_T() const {
 template <typename Scalar>
 std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_nh_T() const {
   return differential_->get_nh_T();
+}
+
+template <typename Scalar>
+const typename MathBaseTpl<Scalar>::VectorXs&
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_g_lb() const {
+  return differential_->get_g_lb();
+}
+
+template <typename Scalar>
+const typename MathBaseTpl<Scalar>::VectorXs&
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_g_ub() const {
+  return differential_->get_g_ub();
 }
 
 template <typename Scalar>

@@ -99,6 +99,7 @@ void ResidualModelContactWrenchConeTpl<Scalar>::updateJacobians(
   const MatrixXs& df_dx = d->contact->df_dx;
   const MatrixXs& df_du = d->contact->df_du;
   const MatrixX6s& A = fref_.get_A();
+  data->Rx.resize(A.rows(), df_dx.cols());
   data->Rx.noalias() = A * df_dx;
   data->Ru.noalias() = A * df_du;
   update_jacobians_ = false;

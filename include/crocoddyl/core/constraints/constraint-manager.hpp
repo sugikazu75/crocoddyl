@@ -278,6 +278,16 @@ class ConstraintModelManagerTpl {
       std::ostream& os, const ConstraintModelManagerTpl<Scalar>& model);
 
  private:
+  /**
+   * @brief Check that a constraint's Jacobians fit in the manager data
+   *
+   * Jacobians may be wider than the state's `ndx` when they span an augmented
+   * state (e.g. thrusts), as long as the shared data provides those columns.
+   */
+  void checkJacobianWidth(const std::shared_ptr<ConstraintDataManager>& data,
+                          const std::shared_ptr<ConstraintDataAbstract>& data_i,
+                          const std::string& name, const std::size_t ndx) const;
+
   std::shared_ptr<StateAbstract> state_;  //!< State description
   ConstraintModelContainer constraints_;  //!< Stack of constraint items
   VectorXs lb_;                           //!< Lower bound of the constraint

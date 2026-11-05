@@ -8,6 +8,7 @@ set(${PROJECT_NAME}_PYTHON_BINDINGS_TESTS
     contacts
     impulses
     squashing
+    thrust_gradients
     copy)
 
 foreach(TEST ${${PROJECT_NAME}_PYTHON_BINDINGS_TESTS})
