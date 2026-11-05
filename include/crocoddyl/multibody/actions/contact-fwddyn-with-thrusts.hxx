@@ -720,7 +720,7 @@ typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
 DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
     computeEquilibriumThrust(
         const std::shared_ptr<DifferentialActionDataAbstract>& data,
-        const Eigen::Ref<const VectorXs>& q) {
+        const Eigen::Ref<const VectorXs>& q, const Scalar min_normal_force) {
   Data* d = static_cast<Data*>(data.get());
   const std::size_t nq = state_->get_nq();
   const std::size_t nv = state_->get_nv();
@@ -822,7 +822,7 @@ DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::
 
     if (nc_i > 0) {
       const std::size_t normal_id = nc_i == 1 ? 0 : (nc_i == 2 ? 1 : 2);
-      lb(nu_ + contact_offset + normal_id) = Scalar(0.);
+      lb(nu_ + contact_offset + normal_id) = min_normal_force;
     }
     contact_offset += nc_i;
   }
@@ -1229,6 +1229,18 @@ std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_ng_T() const {
 template <typename Scalar>
 std::size_t IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_nh_T() const {
   return differential_->get_nh_T();
+}
+
+template <typename Scalar>
+const typename MathBaseTpl<Scalar>::VectorXs&
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_g_lb() const {
+  return differential_->get_g_lb();
+}
+
+template <typename Scalar>
+const typename MathBaseTpl<Scalar>::VectorXs&
+IntegratedActionModelEulerWithThrustsTpl<Scalar>::get_g_ub() const {
+  return differential_->get_g_ub();
 }
 
 template <typename Scalar>

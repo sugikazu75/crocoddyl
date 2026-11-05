@@ -174,5 +174,39 @@ class ThrustBarrierHessianTest(unittest.TestCase):
         self.assertTrue(np.allclose(Lxx, lxx, atol=1e-4), "Wrong thrust Lxx.")
 
 
+class IntegratedInequalityBoundsTest(unittest.TestCase):
+    def test_bounds_reach_the_solver(self):
+        def force_above_bound(robot, frame_id, nu):
+            res = crocoddyl.ResidualModelContactForce(
+                robot, frame_id, pinocchio.Force.Zero(), 6, nu
+            )
+            return crocoddyl.ConstraintModelResidual(
+                robot, res, np.full(6, 1e3), np.full(6, 2e3), False
+            )
+
+        state, dam = build_model(constraint=force_above_bound)
+        model = crocoddyl.IntegratedActionModelEulerWithThrusts(dam, 1e-3)
+        problem = crocoddyl.ShootingProblem(state.rand(), [model], model)
+        solver = crocoddyl.SolverFDDP(problem)
+        solver.setCandidate()
+        problem.calc(solver.xs, solver.us)
+        # With unbounded rows, every value of the residual would be feasible
+        self.assertGreater(solver.computeInequalityFeasibility(), 1.0)
+
+
+class EquilibriumThrustTest(unittest.TestCase):
+    def test_min_normal_force(self):
+        state, dam = build_model()
+        data = dam.createData()
+        # A random configuration may have no bounded static equilibrium
+        q = state.zero()[: state.nq]
+        default = dam.computeEquilibriumThrust(data, q)
+        self.assertTrue(
+            np.allclose(default, dam.computeEquilibriumThrust(data, q, 0.0))
+        )
+        loaded = dam.computeEquilibriumThrust(data, q, 50.0)
+        self.assertFalse(np.allclose(default, loaded), "Bound had no effect.")
+
+
 if __name__ == "__main__":
     unittest.main()
