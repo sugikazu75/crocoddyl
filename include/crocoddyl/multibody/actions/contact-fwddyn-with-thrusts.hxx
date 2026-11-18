@@ -87,6 +87,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::init() {
   Base::set_u_ub(actuation_->get_u_ub());
   robot_only_costs_ = (costs_->get_state()->get_ndx() != state_->get_ndx());
   thrust_reg_weight_ = VectorXs::Zero(nf_);
+  thrust_reg_ref_ = VectorXs::Zero(nf_);
   thrust_barrier_weight_ = VectorXs::Zero(nf_);
   thrust_lb_ =
       VectorXs::Constant(nf_, -std::numeric_limits<Scalar>::infinity());
@@ -152,9 +153,10 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
   costs_->calc(d->costs, robot_only_costs_ ? x.head(nq + nv) : x, u);
   d->cost = d->costs->cost;
 
-  // Thrust regularization: 0.5 * sum_i(w_i * f_i^2)  (f = x.tail(nf_))
+  // Thrust regularization: 0.5 * sum_i(w_i * (f_i - r_i)^2)  (f = x.tail(nf_))
   if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
-    d->cost += Scalar(0.5) * thrust_reg_weight_.dot(x.tail(nf_).cwiseAbs2());
+    d->cost += Scalar(0.5) * thrust_reg_weight_.dot(
+                                 (x.tail(nf_) - thrust_reg_ref_).cwiseAbs2());
   }
 
   // Thrust quadratic barrier
@@ -197,7 +199,8 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calc(
   d->cost = d->costs->cost;
 
   if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
-    d->cost += Scalar(0.5) * thrust_reg_weight_.dot(x.tail(nf_).cwiseAbs2());
+    d->cost += Scalar(0.5) * thrust_reg_weight_.dot(
+                                 (x.tail(nf_) - thrust_reg_ref_).cwiseAbs2());
   }
 
   if (thrust_barrier_weight_.squaredNorm() > Scalar(0.)) {
@@ -348,10 +351,11 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
       d->costs->Luu.noalias() += weight * cost_data->Luu;
     }
 
-    // Thrust regularization gradient: dL/df_i = w_i*f_i, d^2L/df_i^2 = w_i
+    // Thrust regularization gradient: dL/df_i = w_i*(f_i - r_i),
+    // d^2L/df_i^2 = w_i
     if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
       d->Lx.tail(nf_).array() +=
-          thrust_reg_weight_.array() * x.tail(nf_).array();
+          thrust_reg_weight_.array() * (x.tail(nf_) - thrust_reg_ref_).array();
       d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
           thrust_reg_weight_.array();
     }
@@ -381,7 +385,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
     // Thrust regularization gradient (non-robot-only path)
     if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
       d->Lx.tail(nf_).array() +=
-          thrust_reg_weight_.array() * x.tail(nf_).array();
+          thrust_reg_weight_.array() * (x.tail(nf_) - thrust_reg_ref_).array();
       d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
           thrust_reg_weight_.array();
     }
@@ -438,7 +442,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
 
     if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
       d->Lx.tail(nf_).array() +=
-          thrust_reg_weight_.array() * x.tail(nf_).array();
+          thrust_reg_weight_.array() * (x.tail(nf_) - thrust_reg_ref_).array();
       d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
           thrust_reg_weight_.array();
     }
@@ -464,7 +468,7 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::calcDiff(
 
     if (thrust_reg_weight_.squaredNorm() > Scalar(0.)) {
       d->Lx.tail(nf_).array() +=
-          thrust_reg_weight_.array() * x.tail(nf_).array();
+          thrust_reg_weight_.array() * (x.tail(nf_) - thrust_reg_ref_).array();
       d->Lxx.bottomRightCorner(nf_, nf_).diagonal().array() +=
           thrust_reg_weight_.array();
     }
@@ -584,6 +588,7 @@ DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::cast() const {
       ret.set_armature(armature_.template cast<NewScalar>());
     }
     ret.set_thrust_reg_weight(thrust_reg_weight_.template cast<NewScalar>());
+    ret.set_thrust_reg_ref(thrust_reg_ref_.template cast<NewScalar>());
     ret.set_thrust_barrier(thrust_barrier_weight_.template cast<NewScalar>(),
                            thrust_lb_.template cast<NewScalar>(),
                            thrust_ub_.template cast<NewScalar>());
@@ -599,6 +604,7 @@ DifferentialActionModelContactFwdDynamicsWithThrustsTpl<Scalar>::cast() const {
       ret.set_armature(armature_.template cast<NewScalar>());
     }
     ret.set_thrust_reg_weight(thrust_reg_weight_.template cast<NewScalar>());
+    ret.set_thrust_reg_ref(thrust_reg_ref_.template cast<NewScalar>());
     ret.set_thrust_barrier(thrust_barrier_weight_.template cast<NewScalar>(),
                            thrust_lb_.template cast<NewScalar>(),
                            thrust_ub_.template cast<NewScalar>());
@@ -961,6 +967,24 @@ void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
                  << "thrust_reg_weight elements must be non-negative");
   }
   thrust_reg_weight_ = weight;
+}
+
+template <typename Scalar>
+const typename DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::VectorXs&
+DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::get_thrust_reg_ref() const {
+  return thrust_reg_ref_;
+}
+
+template <typename Scalar>
+void DifferentialActionModelContactFwdDynamicsWithThrustsTpl<
+    Scalar>::set_thrust_reg_ref(const VectorXs& ref) {
+  if (static_cast<std::size_t>(ref.size()) != nf_) {
+    throw_pretty("Invalid argument: " << "thrust_reg_ref must have size nf="
+                                      << nf_);
+  }
+  thrust_reg_ref_ = ref;
 }
 
 template <typename Scalar>

@@ -134,6 +134,13 @@ struct DifferentialActionModelContactFwdDynamicsWithThrustsVisitor
             bp::make_function(&Model::set_thrust_reg_weight),
             "per-thruster weight of the thrust regularization")
         .add_property(
+            "thrust_reg_ref",
+            bp::make_function(&Model::get_thrust_reg_ref,
+                              bp::return_value_policy<bp::return_by_value>()),
+            bp::make_function(&Model::set_thrust_reg_ref),
+            "per-thruster reference of the thrust regularization "
+            "0.5*sum(w_i*(f_i-r_i)^2), zero by default")
+        .add_property(
             "thrust_barrier_weight",
             bp::make_function(&Model::get_thrust_barrier_weight,
                               bp::return_value_policy<bp::return_by_value>()),
