@@ -194,6 +194,25 @@ class IntegratedInequalityBoundsTest(unittest.TestCase):
         self.assertGreater(solver.computeInequalityFeasibility(), 1.0)
 
 
+def static_normal_force(state, dam, q, thrust):
+    # The 6D contact Jacobian of the floating base is invertible, so the base rows of
+    # the static balance Jc^T f = g - W_f thrust determine the contact force.
+    model = state.pinocchio
+    data = model.createData()
+    g = pinocchio.computeGeneralizedGravity(model, data, q)
+    frame_id = model.getFrameId("rleg6_joint")
+    J = pinocchio.computeFrameJacobian(model, data, q, frame_id, pinocchio.LOCAL)
+    x = state.zero()
+    x[: state.nq] = q
+    u = np.zeros(dam.nu)
+    actuation_data = dam.actuation.createData()
+    dam.actuation.calc(actuation_data, x, u)
+    dam.actuation.calcDiff(actuation_data, x, u)
+    W_f = actuation_data.dtau_dx[:6, -dam.nf :]
+    f = np.linalg.solve(J[:, :6].T, g[:6] - W_f @ thrust)
+    return f[2]
+
+
 class EquilibriumThrustTest(unittest.TestCase):
     def test_min_normal_force(self):
         state, dam = build_model()
@@ -204,8 +223,15 @@ class EquilibriumThrustTest(unittest.TestCase):
         self.assertTrue(
             np.allclose(default, dam.computeEquilibriumThrust(data, q, 0.0))
         )
-        loaded = dam.computeEquilibriumThrust(data, q, 50.0)
+        # The random model fixes how much normal force a static equilibrium can
+        # reach, so a constant bound can be infeasible. Ask for slightly more than the
+        # default solution provides instead.
+        bound = static_normal_force(state, dam, q, default) + 1.0
+        loaded = dam.computeEquilibriumThrust(data, q, bound)
         self.assertFalse(np.allclose(default, loaded), "Bound had no effect.")
+        self.assertAlmostEqual(
+            static_normal_force(state, dam, q, loaded), bound, places=6
+        )
 
 
 if __name__ == "__main__":
