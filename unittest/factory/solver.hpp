@@ -17,6 +17,9 @@
 #ifdef CROCODDYL_WITH_ODYN
 #include "crocoddyl/core/solvers/odyn-sqp.hpp"
 #endif
+#ifdef CROCODDYL_WITH_HPIPM
+#include "crocoddyl/core/solvers/hpipm-sqp.hpp"
+#endif
 
 namespace crocoddyl {
 namespace unittest {
@@ -54,6 +57,9 @@ struct SolverTypes {
     SolverBoxFDDP_HybridShoot,
 #ifdef CROCODDYL_WITH_ODYN
     SolverOdynSQP,
+#endif
+#ifdef CROCODDYL_WITH_HPIPM
+    SolverHpipmSQP,
 #endif
     SolverIpopt,
     NbSolverTypes
@@ -145,6 +151,12 @@ struct SolverTypes {
         return false;
         break;
     }
+  }
+
+  // Only the DDP-like solvers build a value function (Vx, Vxx). The other
+  // ones cannot be checked with the Riccati-based tests.
+  static bool hasValueFunction(Type type) {
+    return isSolverFDDP(type) || isSolverIntro(type) || isSolverBoxFDDP(type);
   }
 
   static bool isSingleShoot(Type type) {

@@ -24,13 +24,17 @@ void test_state_dimension(StateModelTypes::Type state_type) {
   const std::shared_ptr<crocoddyl::StateAbstract>& state =
       factory.create(state_type);
 
+  // Number of extra Euclidean states carried on top of (q, v); it is zero
+  // for every state but the thrust-augmented ones.
+  const std::size_t nf = get_nthrusters(state_type);
+
   // Checking the dimension of zero and random states
   BOOST_CHECK(static_cast<std::size_t>(state->zero().size()) ==
               state->get_nx());
   BOOST_CHECK(static_cast<std::size_t>(state->rand().size()) ==
               state->get_nx());
-  BOOST_CHECK(state->get_nx() == (state->get_nq() + state->get_nv()));
-  BOOST_CHECK(state->get_ndx() == (2 * state->get_nv()));
+  BOOST_CHECK(state->get_nx() == (state->get_nq() + state->get_nv() + nf));
+  BOOST_CHECK(state->get_ndx() == (2 * state->get_nv() + nf));
   BOOST_CHECK(static_cast<std::size_t>(state->get_lb().size()) ==
               state->get_nx());
   BOOST_CHECK(static_cast<std::size_t>(state->get_ub().size()) ==
@@ -45,8 +49,8 @@ void test_state_dimension(StateModelTypes::Type state_type) {
   BOOST_CHECK(static_cast<std::size_t>(casted_state->rand().size()) ==
               casted_state->get_nx());
   BOOST_CHECK(casted_state->get_nx() ==
-              (casted_state->get_nq() + casted_state->get_nv()));
-  BOOST_CHECK(casted_state->get_ndx() == (2 * casted_state->get_nv()));
+              (casted_state->get_nq() + casted_state->get_nv() + nf));
+  BOOST_CHECK(casted_state->get_ndx() == (2 * casted_state->get_nv() + nf));
   BOOST_CHECK(static_cast<std::size_t>(casted_state->get_lb().size()) ==
               casted_state->get_nx());
   BOOST_CHECK(static_cast<std::size_t>(casted_state->get_ub().size()) ==

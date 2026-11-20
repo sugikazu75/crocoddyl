@@ -26,7 +26,22 @@ template <typename Scalar>
 struct ThrusterTpl;
 
 template <typename Scalar>
+struct DistributedThrusterTpl;
+
+template <typename Scalar>
 class ActuationModelFloatingBaseThrustersTpl;
+
+template <typename Scalar>
+class ActuationModelFloatingBaseDistributedThrustersTpl;
+
+template <typename Scalar>
+struct ActuationDataFloatingBaseDistributedThrustersTpl;
+
+template <typename Scalar>
+class ActuationModelFloatingBaseThrusterRatesTpl;
+
+template <typename Scalar>
+struct ActuationDataFloatingBaseThrusterRatesTpl;
 
 // force
 template <typename Scala>
@@ -64,6 +79,16 @@ template <typename Scalar>
 class DifferentialActionModelContactInvDynamicsTpl;
 template <typename Scalar>
 struct DifferentialActionDataContactInvDynamicsTpl;
+
+template <typename Scalar>
+class IntegratedActionModelEulerWithThrustsTpl;
+template <typename Scalar>
+struct IntegratedActionDataEulerWithThrustsTpl;
+
+template <typename Scalar>
+class DifferentialActionModelContactFwdDynamicsWithThrustsTpl;
+template <typename Scalar>
+struct DifferentialActionDataContactFwdDynamicsWithThrustsTpl;
 
 // numdiff
 template <typename Scalar>
@@ -106,6 +131,11 @@ template <typename Scalar>
 class ResidualModelContactWrenchConeTpl;
 template <typename Scalar>
 struct ResidualDataContactWrenchConeTpl;
+
+template <typename Scalar>
+class ResidualModelContactLineWrenchConeTpl;
+template <typename Scalar>
+struct ResidualDataContactLineWrenchConeTpl;
 
 template <typename Scalar>
 class ResidualModelContactControlGravTpl;
@@ -219,6 +249,11 @@ class ContactModel6DTpl;
 template <typename Scalar>
 struct ContactData6DTpl;
 
+template <typename Scalar>
+class ContactModelRollingTpl;
+template <typename Scalar>
+struct ContactDataRollingTpl;
+
 // friction
 template <typename Scalar>
 class FrictionConeTpl;
@@ -229,9 +264,15 @@ class WrenchConeTpl;
 template <typename Scalar>
 class CoPSupportTpl;
 
+template <typename Scalar>
+class LineWrenchConeTpl;
+
 // state
 template <typename Scalar>
 class StateMultibodyTpl;
+
+template <typename Scalar>
+class StateMultibodyWithThrustsTpl;
 
 // data collector
 template <typename Scalar>
@@ -284,8 +325,17 @@ struct ImpulseDataMultipleTpl;
 typedef ActuationModelFloatingBaseTpl<double> ActuationModelFloatingBase;
 typedef ActuationModelFullTpl<double> ActuationModelFull;
 typedef ThrusterTpl<double> Thruster;
+typedef DistributedThrusterTpl<double> DistributedThruster;
 typedef ActuationModelFloatingBaseThrustersTpl<double>
     ActuationModelFloatingBaseThrusters;
+typedef ActuationModelFloatingBaseDistributedThrustersTpl<double>
+    ActuationModelFloatingBaseDistributedThrusters;
+typedef ActuationDataFloatingBaseDistributedThrustersTpl<double>
+    ActuationDataFloatingBaseDistributedThrusters;
+typedef ActuationModelFloatingBaseThrusterRatesTpl<double>
+    ActuationModelFloatingBaseThrusterRates;
+typedef ActuationDataFloatingBaseThrusterRatesTpl<double>
+    ActuationDataFloatingBaseThrusterRates;
 
 typedef ForceDataAbstractTpl<double> ForceDataAbstract;
 
@@ -311,6 +361,14 @@ typedef DifferentialActionModelContactInvDynamicsTpl<double>
     DifferentialActionModelContactInvDynamics;
 typedef DifferentialActionDataContactInvDynamicsTpl<double>
     DifferentialActionDataContactInvDynamics;
+typedef IntegratedActionModelEulerWithThrustsTpl<double>
+    IntegratedActionModelEulerWithThrusts;
+typedef IntegratedActionDataEulerWithThrustsTpl<double>
+    IntegratedActionDataEulerWithThrusts;
+typedef DifferentialActionModelContactFwdDynamicsWithThrustsTpl<double>
+    DifferentialActionModelContactFwdDynamicsWithThrusts;
+typedef DifferentialActionDataContactFwdDynamicsWithThrustsTpl<double>
+    DifferentialActionDataContactFwdDynamicsWithThrusts;
 
 typedef CostModelNumDiffTpl<double> CostModelNumDiff;
 typedef CostDataNumDiffTpl<double> CostDataNumDiff;
@@ -320,6 +378,7 @@ typedef ContactDataNumDiffTpl<double> ContactDataNumDiff;
 typedef FrictionConeTpl<double> FrictionCone;
 typedef WrenchConeTpl<double> WrenchCone;
 typedef CoPSupportTpl<double> CoPSupport;
+typedef LineWrenchConeTpl<double> LineWrenchCone;
 
 typedef ResidualModelCentroidalMomentumTpl<double>
     ResidualModelCentroidalMomentum;
@@ -340,6 +399,10 @@ typedef ResidualDataContactCoPPositionTpl<double>
 typedef ResidualModelContactWrenchConeTpl<double>
     ResidualModelContactWrenchCone;
 typedef ResidualDataContactWrenchConeTpl<double> ResidualDataContactWrenchCone;
+typedef ResidualModelContactLineWrenchConeTpl<double>
+    ResidualModelContactLineWrenchCone;
+typedef ResidualDataContactLineWrenchConeTpl<double>
+    ResidualDataContactLineWrenchCone;
 typedef ResidualModelContactControlGravTpl<double>
     ResidualModelContactControlGrav;
 typedef ResidualDataContactControlGravTpl<double>
@@ -400,8 +463,11 @@ typedef ContactModel3DTpl<double> ContactModel3D;
 typedef ContactData3DTpl<double> ContactData3D;
 typedef ContactModel6DTpl<double> ContactModel6D;
 typedef ContactData6DTpl<double> ContactData6D;
+typedef ContactModelRollingTpl<double> ContactModelRolling;
+typedef ContactDataRollingTpl<double> ContactDataRolling;
 
 typedef StateMultibodyTpl<double> StateMultibody;
+typedef StateMultibodyWithThrustsTpl<double> StateMultibodyWithThrusts;
 
 typedef DataCollectorMultibodyTpl<double> DataCollectorMultibody;
 typedef DataCollectorActMultibodyTpl<double> DataCollectorActMultibody;

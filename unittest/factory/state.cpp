@@ -14,6 +14,7 @@
 #include <pinocchio/parsers/urdf.hpp>
 
 #include "crocoddyl/core/states/euclidean.hpp"
+#include "crocoddyl/multibody/states/multibody-with-thrusts.hpp"
 #include "crocoddyl/multibody/states/multibody.hpp"
 
 namespace crocoddyl {
@@ -45,6 +46,12 @@ std::ostream& operator<<(std::ostream& os, StateModelTypes::Type type) {
     case StateModelTypes::StateMultibody_RandomHumanoid:
       os << "StateMultibody_RandomHumanoid";
       break;
+    case StateModelTypes::StateMultibodyWithThrusts_Hector:
+      os << "StateMultibodyWithThrusts_Hector";
+      break;
+    case StateModelTypes::StateMultibodyWithThrusts_RandomHumanoid:
+      os << "StateMultibodyWithThrusts_RandomHumanoid";
+      break;
     case StateModelTypes::NbStateModelTypes:
       os << "NbStateModelTypes";
       break;
@@ -52,6 +59,16 @@ std::ostream& operator<<(std::ostream& os, StateModelTypes::Type type) {
       break;
   }
   return os;
+}
+
+std::size_t get_nthrusters(StateModelTypes::Type state_type) {
+  switch (state_type) {
+    case StateModelTypes::StateMultibodyWithThrusts_Hector:
+    case StateModelTypes::StateMultibodyWithThrusts_RandomHumanoid:
+      return 4;
+    default:
+      return 0;
+  }
 }
 
 StateModelFactory::StateModelFactory() {}
@@ -89,6 +106,19 @@ std::shared_ptr<crocoddyl::StateAbstract> StateModelFactory::create(
       model =
           PinocchioModelFactory(PinocchioModelTypes::RandomHumanoid).create();
       state = std::make_shared<crocoddyl::StateMultibody>(model);
+      break;
+    case StateModelTypes::StateMultibodyWithThrusts_Hector:
+      model = PinocchioModelFactory(PinocchioModelTypes::Hector).create();
+      state = std::make_shared<crocoddyl::StateMultibodyWithThrusts>(
+          std::make_shared<crocoddyl::StateMultibody>(model),
+          get_nthrusters(state_type));
+      break;
+    case StateModelTypes::StateMultibodyWithThrusts_RandomHumanoid:
+      model =
+          PinocchioModelFactory(PinocchioModelTypes::RandomHumanoid).create();
+      state = std::make_shared<crocoddyl::StateMultibodyWithThrusts>(
+          std::make_shared<crocoddyl::StateMultibody>(model),
+          get_nthrusters(state_type));
       break;
     default:
       throw_pretty(__FILE__ ": Wrong StateModelTypes::Type given");

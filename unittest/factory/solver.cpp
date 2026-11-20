@@ -116,6 +116,11 @@ std::ostream& operator<<(std::ostream& os, SolverTypes::Type type) {
       os << "SolverOdynSQP";
       break;
 #endif
+#ifdef CROCODDYL_WITH_HPIPM
+    case SolverTypes::SolverHpipmSQP:
+      os << "SolverHpipmSQP";
+      break;
+#endif
 #ifdef CROCODDYL_WITH_IPOPT
     case SolverTypes::SolverIpopt:
       os << "SolverIpopt";
@@ -297,6 +302,11 @@ std::shared_ptr<crocoddyl::SolverAbstract> SolverFactory::create(
 #ifdef CROCODDYL_WITH_ODYN
     case SolverTypes::SolverOdynSQP:
       solver = std::make_shared<crocoddyl::SolverOdynSQP>(problem);
+      break;
+#endif
+#ifdef CROCODDYL_WITH_HPIPM
+    case SolverTypes::SolverHpipmSQP:
+      solver = std::make_shared<crocoddyl::SolverHpipmSQP>(problem);
       break;
 #endif
 #ifdef CROCODDYL_WITH_IPOPT

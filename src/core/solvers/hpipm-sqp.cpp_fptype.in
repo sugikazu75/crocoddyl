@@ -1,0 +1,19 @@
+///////////////////////////////////////////////////////////////////////////////
+// BSD 3-Clause License
+//
+// Copyright (C) 2026, The University of Tokyo
+// Copyright note valid unless otherwise stated in individual files.
+// All rights reserved.
+///////////////////////////////////////////////////////////////////////////////
+
+// Auto-generated file for @SCALAR_TYPE@
+#ifdef CROCODDYL_WITH_HPIPM
+#include "crocoddyl/core/solvers/hpipm-sqp.hpp"
+
+namespace crocoddyl {
+
+template class CROCODDYL_EXPLICIT_INSTANTIATION_DEFINITION_DLLAPI
+    SolverHpipmSQPTpl<@SCALAR_TYPE@>;
+
+}  // namespace crocoddyl
+#endif  // CROCODDYL_WITH_HPIPM

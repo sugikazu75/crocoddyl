@@ -83,6 +83,12 @@ BOOST_PYTHON_MODULE(libcrocoddyl_pywrap_@SCALAR_NAME@) {
   bp::scope().attr("WITH_ODYN") = false;
 #endif
 
+#ifdef CROCODDYL_WITH_HPIPM
+  bp::scope().attr("WITH_HPIPM") = true;
+#else
+  bp::scope().attr("WITH_HPIPM") = false;
+#endif
+
 #ifdef CROCODDYL_WITH_IPOPT
   bp::scope().attr("WITH_IPOPT") = true;
 #else

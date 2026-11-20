@@ -29,6 +29,7 @@ struct ResidualModelTypes {
     ResidualModelFrameTranslation,
     ResidualModelFrameVelocity,
     ResidualModelControlGrav,
+    ResidualModelSelect,
     ResidualModelTaskFirstOrder,
     ResidualModelTaskSecondOrder,
 #ifdef PINOCCHIO_WITH_HPP_FCL

@@ -568,8 +568,12 @@ void register_solvers_againt_lqr_actions_unit_tests(
   test_name << "test_" << solver_type << "_against_lqr_action_" << action_type;
   test_suite* ts = BOOST_TEST_SUITE(test_name.str());
   std::cout << "Running " << test_name.str() << std::endl;
-  ts->add(BOOST_TEST_CASE(boost::bind(&test_solver_compute_direction,
-                                      solver_type, action_type, T)));
+  // The search direction is checked against the Riccati recursion, which is
+  // only available in the solvers building a value function
+  if (SolverTypes::hasValueFunction(solver_type)) {
+    ts->add(BOOST_TEST_CASE(boost::bind(&test_solver_compute_direction,
+                                        solver_type, action_type, T)));
+  }
   ts->add(BOOST_TEST_CASE(
       boost::bind(&test_solver_gaps_evolution, solver_type, action_type, T)));
   ts->add(BOOST_TEST_CASE(boost::bind(&test_solver_expected_improvement,

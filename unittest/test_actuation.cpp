@@ -83,8 +83,12 @@ void test_actuationSet(ActuationModelTypes::Type actuation_type,
   Eigen::VectorXd x = model->get_state()->rand();
   const Eigen::VectorXd u = Eigen::VectorXd::Random(model->get_nu());
 
-  // Computing the selection matrix
+  // Computing the selection matrix. The actuated subspace may depend on the
+  // configuration (e.g. thrusters attached to moving links); the framework
+  // refreshes it in commands(), which is what the inverse-dynamics models --
+  // the only consumers of tau_set -- call before reading it.
   model->calc(data, x, u);
+  model->commands(data, x, data->tau);
   model_num_diff.calc(data_num_diff, x, u);
   model_num_diff.calcDiff(data_num_diff, x, u);
 
@@ -107,6 +111,7 @@ void test_actuationSet(ActuationModelTypes::Type actuation_type,
   Eigen::VectorXf x_f = x.cast<float>();
   const Eigen::VectorXf u_f = u.cast<float>();
   casted_model->calc(casted_data, x_f, u_f);
+  casted_model->commands(casted_data, x_f, casted_data->tau);
   for (std::size_t k = 0; k < nv; ++k) {
     BOOST_CHECK(data->tau_set[k] == casted_data->tau_set[k]);
   }
@@ -143,15 +148,25 @@ void test_partial_derivatives_against_numdiff(
   BOOST_CHECK(isCloseAbsRel(data->dtau_dx, data_num_diff->dtau_dx, tol, tol));
   BOOST_CHECK(isCloseAbsRel(data->dtau_du, data_num_diff->dtau_du, tol, tol));
 
-  // Computing the actuation derivatives
-  x = model->get_state()->rand();
-  model->calc(data, x);
-  model->calcDiff(data, x);
-  model_num_diff.calc(data_num_diff, x);
-  model_num_diff.calcDiff(data_num_diff, x);
+  // Computing the actuation derivatives in the terminal nodes. Note that
+  // ActuationModelAbstract::calc(data, x) and calcDiff(data, x) are not
+  // virtual: they leave the actuation signal and its Jacobians untouched. We
+  // therefore start from freshly created data, otherwise this check would
+  // compare values left over from the (x, u) calls above, which do not match
+  // for models whose tau depends on the state.
+  const std::shared_ptr<crocoddyl::ActuationDataAbstract>& term_data =
+      model->createData();
+  const std::shared_ptr<crocoddyl::ActuationDataAbstract>& term_data_num_diff =
+      model_num_diff.createData();
+  const Eigen::VectorXd xterm = model->get_state()->rand();
+  model->calc(term_data, xterm);
+  model->calcDiff(term_data, xterm);
+  model_num_diff.calc(term_data_num_diff, xterm);
+  model_num_diff.calcDiff(term_data_num_diff, xterm);
 
   // Checking the partial derivatives against numdiff
-  BOOST_CHECK(isCloseAbsRel(data->dtau_dx, data_num_diff->dtau_dx, tol, tol));
+  BOOST_CHECK(
+      isCloseAbsRel(term_data->dtau_dx, term_data_num_diff->dtau_dx, tol, tol));
 
   // Checking that casted computation is the same
   const std::shared_ptr<crocoddyl::ActuationModelAbstractTpl<float>>&
@@ -168,10 +183,13 @@ void test_partial_derivatives_against_numdiff(
   BOOST_CHECK(
       (data->dtau_du.cast<float>() - casted_data->dtau_du).isZero(tol_f));
 
-  casted_model->calc(casted_data, x_f);
-  casted_model->calcDiff(casted_data, x_f);
-  BOOST_CHECK(
-      (data->dtau_dx.cast<float>() - casted_data->dtau_dx).isZero(tol_f));
+  const std::shared_ptr<crocoddyl::ActuationDataAbstractTpl<float>>&
+      casted_term_data = casted_model->createData();
+  const Eigen::VectorXf xterm_f = xterm.cast<float>();
+  casted_model->calc(casted_term_data, xterm_f);
+  casted_model->calcDiff(casted_term_data, xterm_f);
+  BOOST_CHECK((term_data->dtau_dx.cast<float>() - casted_term_data->dtau_dx)
+                  .isZero(tol_f));
 }
 
 void test_commands(ActuationModelTypes::Type actuation_type,
@@ -283,12 +301,16 @@ void register_actuation_model_unit_tests(
 
 bool init_function() {
   for (size_t i = 0; i < StateModelTypes::all.size(); ++i) {
+    if (get_nthrusters(StateModelTypes::all[i]) != 0) {
+      continue;  // these actuation models expect a plain StateMultibody
+    }
     register_actuation_model_unit_tests(ActuationModelTypes::ActuationModelFull,
                                         StateModelTypes::all[i]);
   }
   for (size_t i = 0; i < StateModelTypes::all.size(); ++i) {
     if (StateModelTypes::all[i] != StateModelTypes::StateVector &&
-        StateModelTypes::all[i] != StateModelTypes::StateMultibody_Hector) {
+        StateModelTypes::all[i] != StateModelTypes::StateMultibody_Hector &&
+        get_nthrusters(StateModelTypes::all[i]) == 0) {
       register_actuation_model_unit_tests(
           ActuationModelTypes::ActuationModelFloatingBase,
           StateModelTypes::all[i]);
@@ -301,6 +323,22 @@ bool init_function() {
   register_actuation_model_unit_tests(
       ActuationModelTypes::ActuationModelFloatingBaseThrusters,
       StateModelTypes::StateMultibody_Hector);
+
+  // Thrusters attached to body frames need a floating base, and the
+  // thrust-rate model additionally needs the augmented state that carries the
+  // current thrust.
+  register_actuation_model_unit_tests(
+      ActuationModelTypes::ActuationModelFloatingBaseDistributedThrusters,
+      StateModelTypes::StateMultibody_Hector);
+  register_actuation_model_unit_tests(
+      ActuationModelTypes::ActuationModelFloatingBaseDistributedThrusters,
+      StateModelTypes::StateMultibody_RandomHumanoid);
+  register_actuation_model_unit_tests(
+      ActuationModelTypes::ActuationModelFloatingBaseThrusterRates,
+      StateModelTypes::StateMultibodyWithThrusts_Hector);
+  register_actuation_model_unit_tests(
+      ActuationModelTypes::ActuationModelFloatingBaseThrusterRates,
+      StateModelTypes::StateMultibodyWithThrusts_RandomHumanoid);
   return true;
 }
 

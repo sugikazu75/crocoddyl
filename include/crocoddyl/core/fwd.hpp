@@ -43,6 +43,11 @@ template <typename Scalar>
 class SolverOdynSQPTpl;
 #endif
 
+#ifdef CROCODDYL_WITH_HPIPM
+template <typename Scalar>
+class SolverHpipmSQPTpl;
+#endif
+
 template <typename Scalar>
 class SolverBoxFDDPTpl;
 
@@ -266,6 +271,11 @@ template <typename Scalar>
 struct ResidualDataControlTpl;
 
 template <typename Scalar>
+class ResidualModelSelectTpl;
+template <typename Scalar>
+struct ResidualDataSelectTpl;
+
+template <typename Scalar>
 class ResidualModelJointEffortTpl;
 template <typename Scalar>
 struct ResidualDataJointEffortTpl;
@@ -379,6 +389,9 @@ typedef SolverIntroTpl<double> SolverIntro;
 #ifdef CROCODDYL_WITH_ODYN
 typedef SolverOdynSQPTpl<double> SolverOdynSQP;
 #endif
+#ifdef CROCODDYL_WITH_HPIPM
+typedef SolverHpipmSQPTpl<double> SolverHpipmSQP;
+#endif
 typedef SolverBoxFDDPTpl<double> SolverBoxFDDP;
 typedef SolverKKTTpl<double> SolverKKT;
 typedef BoxQPTpl<double> BoxQP;
@@ -416,6 +429,8 @@ typedef ResidualModelAbstractTpl<double> ResidualModelAbstract;
 typedef ResidualDataAbstractTpl<double> ResidualDataAbstract;
 typedef ResidualModelControlTpl<double> ResidualModelControl;
 typedef ResidualDataControlTpl<double> ResidualDataControl;
+typedef ResidualModelSelectTpl<double> ResidualModelSelect;
+typedef ResidualDataSelectTpl<double> ResidualDataSelect;
 typedef ResidualModelJointEffortTpl<double> ResidualModelJointEffort;
 typedef ResidualDataJointEffortTpl<double> ResidualDataJointEffort;
 typedef ResidualModelJointAccelerationTpl<double>
