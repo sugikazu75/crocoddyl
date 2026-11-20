@@ -146,7 +146,8 @@ class DifferentialActionModelContactFwdDynamicsWithThrustsTpl
 
   VectorXs computeEquilibriumThrust(
       const std::shared_ptr<DifferentialActionDataAbstract>& data,
-      const Eigen::Ref<const VectorXs>& q);
+      const Eigen::Ref<const VectorXs>& q,
+      const Scalar min_normal_force = Scalar(0.));
 
   const std::shared_ptr<ActuationModelAbstract>& get_actuation() const;
   const std::shared_ptr<ContactModelMultiple>& get_contacts() const;
@@ -157,12 +158,14 @@ class DifferentialActionModelContactFwdDynamicsWithThrustsTpl
   const Scalar get_damping_factor() const;
   std::size_t get_nf() const;
   const VectorXs& get_thrust_reg_weight() const;
+  const VectorXs& get_thrust_reg_ref() const;
   const VectorXs& get_thrust_barrier_weight() const;
   const VectorXs& get_thrust_lb() const;
   const VectorXs& get_thrust_ub() const;
   void set_armature(const VectorXs& armature);
   void set_damping_factor(const Scalar damping);
   void set_thrust_reg_weight(const VectorXs& weight);
+  void set_thrust_reg_ref(const VectorXs& ref);
   void set_thrust_barrier(const VectorXs& weight, const VectorXs& lb,
                           const VectorXs& ub);
 
@@ -189,10 +192,13 @@ class DifferentialActionModelContactFwdDynamicsWithThrustsTpl
   VectorXs armature_;
   Scalar JMinvJt_damping_;
   bool enable_force_;
-  std::size_t nf_;              //!< Number of thrusters
-  bool robot_only_costs_;       //!< True when cost model uses underlying
-                                //!< StateMultibody (ndx=2*nv)
-  VectorXs thrust_reg_weight_;  //!< Per-thruster weight for 0.5*sum(w_i*f_i^2)
+  std::size_t nf_;                  //!< Number of thrusters
+  bool robot_only_costs_;           //!< True when cost model uses underlying
+                                    //!< StateMultibody (ndx=2*nv)
+  VectorXs thrust_reg_weight_;      //!< Per-thruster weight w of the thrust
+                                    //!< regularization 0.5*sum(w_i*(f_i-r_i)^2)
+  VectorXs thrust_reg_ref_;         //!< Per-thruster reference r of the thrust
+                                    //!< regularization (zero by default)
   VectorXs thrust_barrier_weight_;  //!< Per-thruster quadratic-barrier weight
   VectorXs thrust_lb_;              //!< Thrust lower bound for barrier
   VectorXs thrust_ub_;              //!< Thrust upper bound for barrier
@@ -323,7 +329,8 @@ class IntegratedActionModelEulerWithThrustsTpl
    * @param[in] time_step  Integration step (dt)
    */
   IntegratedActionModelEulerWithThrustsTpl(
-      std::shared_ptr<DifferentialModel> model, const Scalar time_step = 1e-3);
+      std::shared_ptr<DifferentialModel> model,
+      const Scalar time_step = Scalar(1e-3));
   virtual ~IntegratedActionModelEulerWithThrustsTpl() = default;
 
   virtual void calc(const std::shared_ptr<ActionDataAbstract>& data,
@@ -361,6 +368,8 @@ class IntegratedActionModelEulerWithThrustsTpl
   virtual std::size_t get_nh() const override;
   virtual std::size_t get_ng_T() const override;
   virtual std::size_t get_nh_T() const override;
+  virtual const VectorXs& get_g_lb() const override;
+  virtual const VectorXs& get_g_ub() const override;
 
   virtual void print(std::ostream& os) const override;
 

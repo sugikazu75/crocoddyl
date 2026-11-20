@@ -81,11 +81,14 @@ struct DifferentialActionModelContactFwdDynamicsWithThrustsVisitor
         .def("createData", &Model::createData, bp::args("self"),
              "Create the contact forward-dynamics differential action data.")
         .def("computeEquilibriumThrust", &Model::computeEquilibriumThrust,
-             bp::args("self", "data", "q"),
+             (bp::arg("self"), bp::arg("data"), bp::arg("q"),
+              bp::arg("min_normal_force") = Scalar(0.)),
              "Compute the thrust forces that balance gravity at a given "
              "configuration.\n\n"
              ":param data: contact forward-dynamics action data\n"
              ":param q: robot configuration (dim. state.nq)\n"
+             ":param min_normal_force: lower bound of the normal force of each "
+             "active contact (default 0)\n"
              ":return equilibrium thrust (dim. nf)")
         .add_property("pinocchio",
                       bp::make_function(&Model::get_pinocchio,
@@ -130,6 +133,13 @@ struct DifferentialActionModelContactFwdDynamicsWithThrustsVisitor
                               bp::return_value_policy<bp::return_by_value>()),
             bp::make_function(&Model::set_thrust_reg_weight),
             "per-thruster weight of the thrust regularization")
+        .add_property(
+            "thrust_reg_ref",
+            bp::make_function(&Model::get_thrust_reg_ref,
+                              bp::return_value_policy<bp::return_by_value>()),
+            bp::make_function(&Model::set_thrust_reg_ref),
+            "per-thruster reference of the thrust regularization "
+            "0.5*sum(w_i*(f_i-r_i)^2), zero by default")
         .add_property(
             "thrust_barrier_weight",
             bp::make_function(&Model::get_thrust_barrier_weight,
